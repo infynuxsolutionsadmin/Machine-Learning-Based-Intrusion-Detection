@@ -1,0 +1,23 @@
+{
+  "run_id": "test4",
+  "source_node": 0,
+  "destination_node": 9,
+  "protocol": "AODV",
+  "route_available": true,
+  "destination_reached": false,
+  "hops": [
+    {
+      "node_id": 0,
+      "time": 42.5,
+      "ip": "10.1.1.1"
+    },
+    {
+      "node_id": 6,
+      "time": 43.056,
+      "ip": "10.1.1.7"
+    }
+  ],
+  "hop_count": 2,
+  "note": "Destination not observed in trace. Likely black-hole attack dropped packets, or route was broken. Partial chain shown.",
+  "nNodes": 10
+}

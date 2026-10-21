@@ -1,0 +1,31 @@
+{
+  "baseline": {
+    "pdr": 19.0,
+    "throughput": 2.67,
+    "delay": 866.76,
+    "packet_loss": 78
+  },
+  "blackhole": {
+    "pdr": 17.0,
+    "throughput": 2.38,
+    "delay": 109.06,
+    "packet_loss": 83
+  },
+  "trust_aware": {
+    "pdr": "N/A (Not isolated in Phase 4 simulation outputs)",
+    "throughput": "N/A",
+    "delay": "N/A",
+    "packet_loss": "N/A"
+  },
+  "lstm_evaluation": {
+    "accuracy": 0.942,
+    "test_samples": 4400,
+    "features": ["rx_rate", "fw_rate", "drop_rate", "fw_ratio"]
+  },
+  "federated_learning": {
+    "clients": 3,
+    "rounds": 5,
+    "final_global_accuracy": 0.942,
+    "final_global_loss": 0.2504
+  }
+}

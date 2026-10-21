@@ -1,0 +1,225 @@
+{
+    "dataset_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\backend\\outputs\\simulations\\run_20260923_120928\\parsed_features.csv",
+    "dataset_row_count": 32,
+    "feature_count_total": 7,
+    "class_distribution": {
+        "0": 28,
+        "1": 4
+    },
+    "train_size": 22,
+    "test_size": 10,
+    "selected_features": [
+        "rx",
+        "control_message_frequency"
+    ],
+    "model_names": [
+        "RandomForest",
+        "XGBoost",
+        "CatBoost",
+        "SVM",
+        "MLP"
+    ],
+    "metrics": {
+        "RandomForest": {
+            "Accuracy": 1.0,
+            "Precision": 1.0,
+            "Recall": 1.0,
+            "F1": 1.0,
+            "FPR": 0.0,
+            "ConfusionMatrix": {
+                "TN": 9,
+                "FP": 0,
+                "FN": 0,
+                "TP": 1
+            },
+            "ClassificationReport": {
+                "0": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 9.0
+                },
+                "1": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 1.0
+                },
+                "accuracy": 1.0,
+                "macro avg": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 10.0
+                },
+                "weighted avg": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 10.0
+                }
+            }
+        },
+        "XGBoost": {
+            "Accuracy": 1.0,
+            "Precision": 1.0,
+            "Recall": 1.0,
+            "F1": 1.0,
+            "FPR": 0.0,
+            "ConfusionMatrix": {
+                "TN": 9,
+                "FP": 0,
+                "FN": 0,
+                "TP": 1
+            },
+            "ClassificationReport": {
+                "0": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 9.0
+                },
+                "1": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 1.0
+                },
+                "accuracy": 1.0,
+                "macro avg": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 10.0
+                },
+                "weighted avg": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 10.0
+                }
+            }
+        },
+        "CatBoost": {
+            "Accuracy": 1.0,
+            "Precision": 1.0,
+            "Recall": 1.0,
+            "F1": 1.0,
+            "FPR": 0.0,
+            "ConfusionMatrix": {
+                "TN": 9,
+                "FP": 0,
+                "FN": 0,
+                "TP": 1
+            },
+            "ClassificationReport": {
+                "0": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 9.0
+                },
+                "1": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 1.0
+                },
+                "accuracy": 1.0,
+                "macro avg": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 10.0
+                },
+                "weighted avg": {
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "f1-score": 1.0,
+                    "support": 10.0
+                }
+            }
+        },
+        "SVM": {
+            "Accuracy": 0.9,
+            "Precision": 0.5,
+            "Recall": 1.0,
+            "F1": 0.6666666666666666,
+            "FPR": 0.1111111111111111,
+            "ConfusionMatrix": {
+                "TN": 8,
+                "FP": 1,
+                "FN": 0,
+                "TP": 1
+            },
+            "ClassificationReport": {
+                "0": {
+                    "precision": 1.0,
+                    "recall": 0.8888888888888888,
+                    "f1-score": 0.9411764705882353,
+                    "support": 9.0
+                },
+                "1": {
+                    "precision": 0.5,
+                    "recall": 1.0,
+                    "f1-score": 0.6666666666666666,
+                    "support": 1.0
+                },
+                "accuracy": 0.9,
+                "macro avg": {
+                    "precision": 0.75,
+                    "recall": 0.9444444444444444,
+                    "f1-score": 0.803921568627451,
+                    "support": 10.0
+                },
+                "weighted avg": {
+                    "precision": 0.95,
+                    "recall": 0.9,
+                    "f1-score": 0.9137254901960784,
+                    "support": 10.0
+                }
+            }
+        },
+        "MLP": {
+            "Accuracy": 0.9,
+            "Precision": 0.5,
+            "Recall": 1.0,
+            "F1": 0.6666666666666666,
+            "FPR": 0.1111111111111111,
+            "ConfusionMatrix": {
+                "TN": 8,
+                "FP": 1,
+                "FN": 0,
+                "TP": 1
+            },
+            "ClassificationReport": {
+                "0": {
+                    "precision": 1.0,
+                    "recall": 0.8888888888888888,
+                    "f1-score": 0.9411764705882353,
+                    "support": 9.0
+                },
+                "1": {
+                    "precision": 0.5,
+                    "recall": 1.0,
+                    "f1-score": 0.6666666666666666,
+                    "support": 1.0
+                },
+                "accuracy": 0.9,
+                "macro avg": {
+                    "precision": 0.75,
+                    "recall": 0.9444444444444444,
+                    "f1-score": 0.803921568627451,
+                    "support": 10.0
+                },
+                "weighted avg": {
+                    "precision": 0.95,
+                    "recall": 0.9,
+                    "f1-score": 0.9137254901960784,
+                    "support": 10.0
+                }
+            }
+        }
+    },
+    "timestamp": "2026-09-23T12:33:02.619017"
+}

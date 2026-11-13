@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchPreventionSummary, fetchSimulationStatus, fetchRoutingPath, fetchNetworkNodes } from '../services/apiService';
-import { Server, AlertTriangle } from 'lucide-react';
+import { Radio } from 'lucide-react';
 
 const NetworkTopology = () => {
   const [summary, setSummary] = useState(null);
@@ -29,25 +29,26 @@ const NetworkTopology = () => {
   }, []);
 
   if (loading) return (
-    <div className="p-8 max-w-7xl mx-auto flex items-center justify-center min-h-[50vh]">
-      <div className="text-slate-500 font-medium text-lg flex items-center gap-3">
-        <span className="w-5 h-5 rounded-full border-2 border-slate-300 border-t-blue-600 animate-spin"></span>
-        Loading network topology...
-      </div>
+    <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
+      <div className="w-10 h-10 rounded-full border-3 border-blue-600/20 border-t-blue-600 animate-spin"></div>
+      <p className="text-sm font-semibold text-slate-500">Loading Network Topology...</p>
     </div>
   );
   
   if (error) return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 max-w-xl mx-auto mt-10">
-      <h3 className="text-lg font-bold text-red-800 mb-2 flex items-center gap-2">Unable to load network topology</h3>
-      <p className="text-slate-500">{error}</p>
+    <div className="dash-card p-6 rounded-3xl max-w-xl mx-auto mt-8 border-rose-200 bg-rose-50/50">
+      <h3 className="text-base font-extrabold text-rose-800 mb-1 flex items-center gap-2">Unable to load network topology</h3>
+      <p className="text-sm text-slate-500">{error}</p>
     </div>
   );
   
   if (!simStatus || simStatus.status !== 'completed') return (
-    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 max-w-xl mx-auto mt-10 text-center">
-      <p className="text-slate-800 font-bold text-xl mb-2">No completed simulation data available.</p>
-      <p className="text-slate-500">Run a simulation to view the network topology.</p>
+    <div className="dash-card p-8 rounded-3xl max-w-xl mx-auto mt-8 text-center">
+      <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+        <Radio className="w-6 h-6" />
+      </div>
+      <p className="text-slate-900 font-extrabold text-lg mb-1">No completed simulation data available</p>
+      <p className="text-sm text-slate-500">Run a simulation from the Simulation Control tab to render the interactive network graph.</p>
     </div>
   );
 
@@ -67,18 +68,16 @@ const NetworkTopology = () => {
 
   // Stable Graph Node Positioning using a distributed MANET-style layout
   const getPos = (id) => {
-    // We use a carefully crafted distributed layout to minimize overlap,
-    // keep nodes distinct, and ensure readable labels.
     const posMap = {
       0: { left: 10, top: 50 },  // Source Node (Far Left)
-      5: { left: 20, top: 20 },  // Top Row (Malicious)
+      5: { left: 22, top: 22 },  // Top Row (Malicious)
       8: { left: 50, top: 20 },  // Top Row
-      4: { left: 80, top: 20 },  // Top Row
+      4: { left: 78, top: 22 },  // Top Row
       2: { left: 35, top: 50 },  // Route Node
       3: { left: 65, top: 50 },  // Route Node
-      6: { left: 20, top: 80 },  // Bottom Row
+      6: { left: 22, top: 78 },  // Bottom Row
       1: { left: 50, top: 80 },  // Bottom Row (Malicious)
-      7: { left: 80, top: 80 },  // Bottom Row
+      7: { left: 78, top: 78 },  // Bottom Row
       9: { left: 90, top: 50 },  // Destination Node (Far Right)
     };
     
@@ -95,7 +94,7 @@ const NetworkTopology = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-10">
+    <div className="space-y-6 max-w-7xl mx-auto pb-10 animate-in fade-in duration-300">
       <style>{`
         @keyframes routeFlow {
           from { stroke-dashoffset: 24; }
@@ -105,20 +104,36 @@ const NetworkTopology = () => {
           animation: routeFlow 0.8s linear infinite;
         }
       `}</style>
-      <div className="mb-8">
-        <h1 className="text-3xl font-black text-slate-800">Network Topology</h1>
-        <p className="text-slate-600 font-bold text-lg mt-1">ML-MANET Network Topology</p>
-        <p className="text-slate-500 font-medium mt-1">
-          {nNodes} nodes • {maliciousCount} malicious • Safe route: {pathNodes.length > 0 ? pathNodes.join(' → ') : 'None'}
-        </p>
+
+      {/* Summary Banner */}
+      <div className="dash-card p-5 rounded-3xl flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-500/25">
+            <Radio className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="font-extrabold text-slate-900 text-base">Distributed MANET Topology</h2>
+            <p className="text-xs text-slate-500">
+              {nNodes} nodes deployed • {maliciousCount} attackers isolated • Safe route: <span className="font-bold text-emerald-600">{pathNodes.length > 0 ? pathNodes.join(' → ') : 'None'}</span>
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700">
+            Source: Node {sourceNode}
+          </span>
+          <span className="px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+            Dest: Node {destNode}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Network Map */}
-        <div className="lg:col-span-2 bg-white rounded-2xl overflow-hidden border border-slate-200 relative min-h-[550px] flex items-center justify-center p-8 shadow-sm">
-           {/* Grid background */}
-           <div className="absolute inset-0 opacity-40 bg-[linear-gradient(rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.05)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
+        <div className="lg:col-span-2 dash-card rounded-3xl overflow-hidden relative min-h-[560px] flex items-center justify-center p-8 bg-white">
+           {/* Subtle high-end grid canvas background */}
+           <div className="absolute inset-0 opacity-40 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:24px_24px]"></div>
            
            <div className="relative z-10 w-full h-full flex flex-col items-center justify-center">
              
@@ -126,10 +141,8 @@ const NetworkTopology = () => {
                {/* Base/Background Edges (Subtle) */}
                <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible">
                  {(() => {
-                   // Pull exact physical connections from NS-3 simulation data directly
                    let knownEdges = networkNodes?.network_edges || simStatus?.edges || summary?.edges || routingPath?.edges || routingPath?.network_edges;
                    
-                   // Fallback: extract from trust_scores if edges array isn't explicitly provided
                    if (!knownEdges && summary?.trust_scores) {
                      knownEdges = [];
                      const seen = new Set();
@@ -145,7 +158,6 @@ const NetworkTopology = () => {
                    }
                    if (!knownEdges) knownEdges = [];
 
-                   // If we have known edges, draw them
                    return knownEdges.map((edge, idx) => {
                      const u = edge[0] ?? edge.source;
                      const v = edge[1] ?? edge.target;
@@ -154,11 +166,9 @@ const NetworkTopology = () => {
                      const p1 = getPos(u);
                      const p2 = getPos(v);
                      
-                     // Check if this edge is part of the active route
                      const isRouteEdge = pathNodes.includes(u) && pathNodes.includes(v) && Math.abs(pathNodes.indexOf(u) - pathNodes.indexOf(v)) === 1;
-                     if (isRouteEdge) return null; // Drawn later sequentially on top
+                     if (isRouteEdge) return null; // Drawn on top
                      
-                     // Check if it involves a malicious node
                      const isBlocked = isMalicious(u) || isMalicious(v);
                      
                      return (
@@ -173,7 +183,7 @@ const NetworkTopology = () => {
                    });
                  })()}
 
-                 {/* Active Safe Route Edges (Strong Green with Animated Flow) */}
+                 {/* Active Safe Route Edges (Vibrant Green with Flowing Pulse) */}
                  {pathNodes.map((nodeId, idx) => {
                    if (idx === 0) return null;
                    const prevId = pathNodes[idx - 1];
@@ -183,16 +193,14 @@ const NetworkTopology = () => {
                    
                    return (
                      <g key={`route-${idx}`}>
-                       {/* Static base line for reduced motion or gaps */}
                        <line 
                          x1={`${p1.left}%`} y1={`${p1.top}%`} x2={`${p2.left}%`} y2={`${p2.top}%`}
-                         stroke="#22c55e" strokeWidth="5" className="drop-shadow-sm"
+                         stroke="#10b981" strokeWidth="5" className="drop-shadow-sm"
                        />
-                       {/* Animated flow effect */}
                        <line 
                          x1={`${p1.left}%`} y1={`${p1.top}%`} x2={`${p2.left}%`} y2={`${p2.top}%`}
-                         stroke="#ffffff" strokeWidth="2.5" strokeDasharray="4 20"
-                         className="opacity-70 motion-reduce:hidden animate-route-flow"
+                         stroke="#ffffff" strokeWidth="2.5" strokeDasharray="4 16"
+                         className="opacity-80 motion-reduce:hidden animate-route-flow"
                        />
                      </g>
                    );
@@ -208,20 +216,35 @@ const NetworkTopology = () => {
                  const inRoute = pathNodes.includes(id);
                  
                  let nodeBg = 'bg-white border-slate-300 text-slate-700 shadow-sm';
-                 if (malicious) nodeBg = 'bg-red-500 border-red-600 text-white shadow-red-500/30 shadow-md';
-                 else if (inRoute) nodeBg = 'bg-emerald-50 border-emerald-500 text-emerald-800 shadow-emerald-500/20 shadow-md border-[3px]';
+                 if (malicious) {
+                   nodeBg = 'bg-gradient-to-tr from-rose-500 to-red-600 border-rose-600 text-white shadow-md shadow-rose-500/30';
+                 } else if (inRoute) {
+                   nodeBg = 'bg-emerald-500 border-emerald-600 text-white shadow-md shadow-emerald-500/30';
+                 }
                  
                  return (
                    <div 
                      key={id}
-                     className="absolute flex flex-col items-center justify-center -ml-5 -mt-5 z-10"
+                     className="absolute flex flex-col items-center justify-center -ml-5 -mt-5 z-10 select-none"
                      style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
                    >
-                     {isSource && <span className="absolute -top-7 text-[10px] font-black bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 whitespace-nowrap shadow-sm">SOURCE</span>}
-                     {isDest && <span className="absolute -bottom-7 text-[10px] font-black bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded border border-indigo-200 whitespace-nowrap shadow-sm">DEST</span>}
-                     {malicious && !isSource && !isDest && <span className="absolute -top-7 text-[9px] font-bold text-red-600 tracking-wider whitespace-nowrap bg-red-50 border border-red-200 px-1 rounded shadow-sm">MALICIOUS</span>}
+                     {isSource && (
+                       <span className="absolute -top-7 text-[10px] font-black bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-2 py-0.5 rounded-full whitespace-nowrap shadow-xs">
+                         SOURCE
+                       </span>
+                     )}
+                     {isDest && (
+                       <span className="absolute -bottom-7 text-[10px] font-black bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-2 py-0.5 rounded-full whitespace-nowrap shadow-xs">
+                         DEST
+                       </span>
+                     )}
+                     {malicious && !isSource && !isDest && (
+                       <span className="absolute -top-7 text-[9px] font-bold text-rose-700 tracking-wider whitespace-nowrap bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full shadow-xs">
+                         ATTACKER
+                       </span>
+                     )}
 
-                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border-2 transition-transform hover:scale-110 z-10 ${nodeBg}`}>
+                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border-2 transition-all hover:scale-115 z-10 cursor-pointer ${nodeBg}`}>
                        {id}
                      </div>
                    </div>
@@ -229,87 +252,78 @@ const NetworkTopology = () => {
                })}
              </div>
              
-             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white border border-slate-200 px-5 py-2.5 rounded-full z-20 shadow-lg flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-slate-600 text-sm font-medium">Safe Route: <span className="font-black text-emerald-600 ml-1">{pathNodes.length > 0 ? pathNodes.join(' → ') : 'None'}</span></span>
+             {/* Floating Safe Route Pill (Bottom Center) */}
+             <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-md border border-slate-200/80 px-6 py-2.5 rounded-full z-20 shadow-lg shadow-slate-900/5 flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="text-slate-600 text-xs font-semibold">
+                  Safe Route: <span className="font-extrabold text-emerald-600 ml-1">{pathNodes.length > 0 ? pathNodes.join(' → ') : 'None'}</span>
+                </span>
              </div>
            </div>
         </div>
 
         {/* Legend & Stats */}
         <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <h3 className="font-bold text-slate-800 mb-4 pb-3 border-b border-slate-100">Legend</h3>
-            <div className="space-y-4">
+          <div className="dash-card p-6 rounded-3xl">
+            <h3 className="font-extrabold text-slate-900 mb-4 pb-3 border-b border-slate-100 text-sm">
+              Legend
+            </h3>
+            <div className="space-y-3.5">
               <div className="flex items-center gap-3">
                 <div className="w-4 h-4 rounded-full bg-white border-2 border-slate-300"></div>
-                <span className="text-sm font-medium text-slate-700">Normal Node</span>
+                <span className="text-xs font-semibold text-slate-600">Normal Active Node</span>
               </div>
               <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded-full bg-red-500 border-2 border-red-600"></div>
-                <span className="text-sm font-medium text-slate-700">Malicious Node</span>
+                <div className="w-4 h-4 rounded-full bg-rose-500 border-2 border-rose-600"></div>
+                <span className="text-xs font-semibold text-slate-600">Malicious Attacker Node</span>
               </div>
               <div className="flex items-center gap-3">
-                <div className="w-6 h-1 bg-emerald-500 rounded-full drop-shadow-sm"></div>
-                <span className="text-sm font-medium text-slate-700">Active Safe Route</span>
+                <div className="w-6 h-1.5 bg-emerald-500 rounded-full"></div>
+                <span className="text-xs font-semibold text-slate-600">Active Safe Route</span>
               </div>
               <div className="flex items-center gap-3 opacity-70">
-                <div className="w-6 h-[2px] bg-red-300 border border-dashed border-red-300"></div>
-                <span className="text-sm font-medium text-slate-700">Blocked / Excluded Connection</span>
+                <div className="w-6 h-[2px] bg-rose-300 border border-dashed border-rose-300"></div>
+                <span className="text-xs font-semibold text-slate-600">Blocked / Excluded Connection</span>
               </div>
               <div className="flex items-center gap-3 opacity-70">
-                <div className="w-6 h-[3px] bg-slate-300"></div>
-                <span className="text-sm font-medium text-slate-700">Normal Connection</span>
+                <div className="w-6 h-[2px] bg-slate-300"></div>
+                <span className="text-xs font-semibold text-slate-600">Normal Connection</span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-black bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">SOURCE</span>
-                <span className="text-sm font-medium text-slate-700">Source Node</span>
+                <span className="text-[10px] font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">SOURCE</span>
+                <span className="text-xs font-semibold text-slate-600">Source Node</span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-black bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded border border-indigo-200">DEST</span>
-                <span className="text-sm font-medium text-slate-700">Destination Node</span>
+                <span className="text-[10px] font-black bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">DEST</span>
+                <span className="text-xs font-semibold text-slate-600">Destination Node</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <h3 className="font-bold text-slate-800 mb-4 pb-3 border-b border-slate-100">Network Stats</h3>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-                <span className="text-sm font-medium text-slate-600">Total Nodes</span>
-                <span className="font-bold text-slate-800">{nNodes}</span>
+          <div className="dash-card p-6 rounded-3xl">
+            <h3 className="font-extrabold text-slate-900 mb-4 pb-3 border-b border-slate-100 text-sm">
+              Network Topology Stats
+            </h3>
+            <div className="space-y-3.5">
+              <div className="flex justify-between items-center text-xs py-1 border-b border-slate-50">
+                <span className="font-medium text-slate-500">Total Nodes</span>
+                <span className="font-bold text-slate-900">{nNodes}</span>
               </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-                <span className="text-sm font-medium text-slate-600">Malicious Nodes</span>
-                <span className="font-bold text-slate-800">{maliciousCount}</span>
+              <div className="flex justify-between items-center text-xs py-1 border-b border-slate-50">
+                <span className="font-medium text-slate-500">Malicious Attackers</span>
+                <span className="font-bold text-rose-600">{maliciousCount}</span>
               </div>
-              {/* <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-                <span className="text-sm font-medium text-slate-600">Safe Nodes</span>
-                <span className="font-bold text-slate-800">{safeNodesCount}</span>
+              <div className="flex justify-between items-center text-xs py-1 border-b border-slate-50">
+                <span className="font-medium text-slate-500">Excluded Nodes</span>
+                <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded max-w-[120px] truncate" title={simStatus?.maliciousNodes?.join(', ') || 'None'}>
+                  {maliciousCount > 0 ? simStatus.maliciousNodes.join(', ') : 'None'}
+                </span>
               </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-                <span className="text-sm font-medium text-slate-600">Source</span>
-                <span className="font-bold text-slate-800">{sourceNode}</span>
-              </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-                <span className="text-sm font-medium text-slate-600">Destination</span>
-                <span className="font-bold text-slate-800">{destNode}</span>
-              </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-                <span className="text-sm font-medium text-slate-600">Active Route</span>
-                <span className="font-bold text-slate-800 max-w-[120px] truncate" title={pathNodes.join(' → ')}>{pathNodes.length > 0 ? pathNodes.join(' → ') : 'None'}</span>
-              </div>
-              <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-                <span className="text-sm font-medium text-slate-600">Route Hops</span>
-                <span className="font-bold text-slate-800">{pathNodes.length > 0 ? pathNodes.length - 1 : 0}</span>
-              </div> */}
-              <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-                <span className="text-sm font-medium text-slate-600">Excluded Nodes</span>
-                <span className="font-bold text-slate-800 max-w-[100px] truncate" title={simStatus?.maliciousNodes?.join(', ') || 'None'}>{maliciousCount > 0 ? simStatus.maliciousNodes.join(', ') : 'None'}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-slate-600">Validation</span>
-                <span className={`font-bold ${routingPath?.route_available ? 'text-emerald-600' : 'text-red-600'}`}>{routingPath?.route_available ? 'PASS' : 'FAIL'}</span>
+              <div className="flex justify-between items-center text-xs py-1">
+                <span className="font-medium text-slate-500">Route Validation</span>
+                <span className={`px-2.5 py-0.5 rounded-full font-bold ${routingPath?.route_available ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                  {routingPath?.route_available ? 'PASS' : 'FAIL'}
+                </span>
               </div>
             </div>
           </div>

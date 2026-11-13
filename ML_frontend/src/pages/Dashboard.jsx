@@ -3,7 +3,10 @@ import {
   fetchHealth, fetchSimulationStatus, fetchPreventionSummary, 
   fetchMetricsComparison, fetchDynamicTrust, fetchRoutingPath 
 } from '../services/apiService';
-import { Activity, ShieldAlert, CheckCircle, Network, Cpu, Route, BarChart3, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  Activity, ShieldAlert, Network, Cpu, Route, 
+  BarChart3, AlertCircle, ShieldCheck, Zap
+} from 'lucide-react';
 
 const Dashboard = () => {
   const [health, setHealth] = useState(null);
@@ -15,31 +18,6 @@ const Dashboard = () => {
   
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
-
-  const scrollRef = React.useRef(null);
-  const [canScroll, setCanScroll] = useState({ left: false, right: true });
-
-  const handleScroll = () => {
-    if (scrollRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-      setCanScroll({
-        left: scrollLeft > 0,
-        right: Math.ceil(scrollLeft + clientWidth) < scrollWidth
-      });
-    }
-  };
-
-  const scrollBy = (dir) => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({ left: dir === 'left' ? -300 : 300, behavior: 'smooth' });
-    }
-  };
-
-  useEffect(() => {
-    handleScroll();
-    window.addEventListener('resize', handleScroll);
-    return () => window.removeEventListener('resize', handleScroll);
-  }, []);
 
   const loadData = async () => {
     try {
@@ -71,10 +49,16 @@ const Dashboard = () => {
     return () => window.removeEventListener('simulation-completed', loadData);
   }, []);
 
-  if (loading) return <div className="p-8 text-slate-500 flex justify-center items-center h-screen">Loading Dashboard Data...</div>;
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+        <div className="w-10 h-10 rounded-full border-3 border-blue-600/20 border-t-blue-600 animate-spin"></div>
+        <p className="text-sm font-semibold text-slate-500">Loading Dashboard Data...</p>
+      </div>
+    );
+  }
 
   const isConnected = health?.status === 'healthy';
-  const isCompleted = simStatus?.status === 'completed';
   
   const handleRunSimulation = async () => {
     setRunning(true);
@@ -96,275 +80,487 @@ const Dashboard = () => {
   const safeNeighbors = preventionSummary?.trust_scores ? Object.keys(preventionSummary.trust_scores).filter(n => !forbiddenNodes.includes(Number(n)) && Number(n) !== sourceNode) : [];
 
   const renderStatusBadge = (status) => {
-    if (status === 'completed' || status === 'safe_route_found' || status === true) return <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-bold uppercase">Completed</span>;
-    if (status === 'running') return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold uppercase">Running</span>;
-    if (status === 'failed' || status === false) return <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold uppercase">Failed</span>;
-    return <span className="px-2 py-1 bg-slate-100 text-slate-500 rounded text-xs font-bold uppercase">Pending</span>;
+    if (status === 'completed' || status === 'safe_route_found' || status === true) {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Completed
+        </span>
+      );
+    }
+    if (status === 'running') {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold animate-pulse">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Running
+        </span>
+      );
+    }
+    if (status === 'failed' || status === false) {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 bg-rose-100 text-rose-700 rounded-full text-xs font-bold">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Failed
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-xs font-bold">
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Pending
+      </span>
+    );
   };
 
-  return (
-    <div className="space-y-8 pb-12 animate-in fade-in duration-500">
-      
-      <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <div className="flex items-center gap-2 mb-6">
-          <Network className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-bold text-slate-800">1. Network Overview</h2>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          <div className="p-4 bg-slate-50 rounded-xl">
-            <p className="text-xs text-slate-500 uppercase font-semibold">Status</p>
-            <p className={`text-xl font-bold ${isConnected ? 'text-emerald-600' : 'text-red-600'}`}>{isConnected ? 'Healthy' : 'Offline'}</p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-xl">
-            <p className="text-xs text-slate-500 uppercase font-semibold">Total Nodes</p>
-            <p className="text-xl font-bold text-slate-800">{totalNodes}</p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-xl">
-            <p className="text-xs text-slate-500 uppercase font-semibold">Malicious</p>
-            <p className="text-xl font-bold text-red-600">[{maliciousNodes.join(', ')}]</p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-xl">
-            <p className="text-xs text-slate-500 uppercase font-semibold">Safe Nodes</p>
-            <p className="text-xl font-bold text-emerald-600">{safeNodes}</p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-xl">
-            <p className="text-xs text-slate-500 uppercase font-semibold">Dataset Rows</p>
-            <p className="text-xl font-bold text-purple-600">{datasetRows}</p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-xl">
-            <p className="text-xs text-slate-500 uppercase font-semibold">Source</p>
-            <p className="text-xl font-bold text-blue-600">{sourceNode}</p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-xl">
-            <p className="text-xs text-slate-500 uppercase font-semibold">Destination</p>
-            <p className="text-xl font-bold text-blue-600">{destNode}</p>
-          </div>
-        </div>
-      </section>
+  // Safe percentage calculation for circular graphic
+  const safePercent = typeof totalNodes === 'number' && totalNodes > 0 
+    ? Math.round((safeNodes / totalNodes) * 100) 
+    : 100;
 
+  return (
+    <div className="space-y-6 pb-8 animate-in fade-in duration-300">
+      
+      {/* TOP SECTION: STAT CARDS + RADIAL BREAKDOWN (Reference Layout) */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        
+        {/* Left 2 Cols: 4 Stats Cards (with Top Left Gradient Card) */}
+        <div className="xl:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-5">
+          
+          {/* Card 1: Featured Gradient Card (DealDeck Blue Card Style) */}
+          <div className="dash-card dash-card-hover bg-gradient-to-br from-[#3b5bf6] via-[#4355f6] to-[#5b4bf6] text-white p-6 rounded-3xl relative overflow-hidden shadow-lg shadow-blue-500/20 border-0 flex flex-col justify-between min-h-[170px]">
+            {/* Soft decorative background circles */}
+            <div className="absolute top-0 right-0 -mr-8 -mt-8 w-36 h-36 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
+            
+            <div className="flex items-center justify-between relative z-10">
+              <div className="w-11 h-11 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center text-white">
+                <Network className="w-5 h-5 text-white" />
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-extrabold ${isConnected ? 'bg-emerald-400/20 text-emerald-200 border border-emerald-400/30' : 'bg-rose-400/20 text-rose-200 border border-rose-400/30'}`}>
+                {isConnected ? '● Healthy' : '● Offline'}
+              </span>
+            </div>
+
+            <div className="mt-4 relative z-10">
+              <span className="text-xs font-semibold text-blue-100 uppercase tracking-wider block">Network Environment</span>
+              <div className="text-3xl font-black text-white tracking-tight mt-0.5">
+                {totalNodes} <span className="text-lg font-medium text-blue-100">Total Nodes</span>
+              </div>
+              <div className="text-xs text-blue-100/90 font-medium mt-1">
+                Safe: <span className="font-bold text-white">{safeNodes}</span> • Malicious: <span className="font-bold text-white">{maliciousNodes.length}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Safe Nodes (Clean White Card) */}
+          <div className="dash-card dash-card-hover p-6 rounded-3xl flex flex-col justify-between min-h-[170px]">
+            <div className="flex items-center justify-between">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-700">
+                {safePercent}% Safe
+              </span>
+            </div>
+            <div className="mt-4">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Operational Nodes</span>
+              <div className="text-3xl font-black text-slate-900 tracking-tight mt-0.5">
+                {safeNodes} <span className="text-sm font-medium text-slate-400">nodes</span>
+              </div>
+              <div className="text-xs text-slate-500 font-medium mt-1">
+                Active in trusted topology
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Malicious Nodes (Clean White Card with Red Pill) */}
+          <div className="dash-card dash-card-hover p-6 rounded-3xl flex flex-col justify-between min-h-[170px]">
+            <div className="flex items-center justify-between">
+              <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-rose-100 text-rose-700">
+                {maliciousNodes.length > 0 ? `-${maliciousNodes.length} Detected` : '0 Threats'}
+              </span>
+            </div>
+            <div className="mt-4">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Threat Vector</span>
+              <div className="text-2xl font-black text-rose-600 tracking-tight mt-0.5 truncate" title={`[${maliciousNodes.join(', ')}]`}>
+                {maliciousNodes.length > 0 ? `[${maliciousNodes.join(', ')}]` : 'None'}
+              </div>
+              <div className="text-xs text-slate-500 font-medium mt-1">
+                Isolated from communication
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Dataset & Routing (Clean White Card) */}
+          <div className="dash-card dash-card-hover p-6 rounded-3xl flex flex-col justify-between min-h-[170px]">
+            <div className="flex items-center justify-between">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <Cpu className="w-5 h-5" />
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-blue-100 text-blue-700">
+                Node {sourceNode} &rarr; {destNode}
+              </span>
+            </div>
+            <div className="mt-4">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Dataset & Session</span>
+              <div className="text-3xl font-black text-slate-900 tracking-tight mt-0.5">
+                {datasetRows} <span className="text-sm font-medium text-slate-400">rows</span>
+              </div>
+              <div className="text-xs text-slate-500 font-medium mt-1 truncate">
+                Route: <span className="font-semibold text-slate-700">{routeNodes.length > 0 ? routeNodes.join(' → ') : 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Right Col: Concentric / Radial Statistics Card (Like Reference "Product Statistic") */}
+        <div className="dash-card p-6 rounded-3xl flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-lg">Topology Statistic</h3>
+                <p className="text-xs text-slate-400 font-medium">Track your network distribution</p>
+              </div>
+              <div className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">
+                Live State
+              </div>
+            </div>
+
+            {/* Concentric Circular Arcs Visualization */}
+            <div className="flex items-center justify-center my-4 relative">
+              <svg className="w-48 h-48 -rotate-90" viewBox="0 0 100 100">
+                {/* Background tracks */}
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f1f5f9" strokeWidth="6" />
+                <circle cx="50" cy="50" r="30" fill="transparent" stroke="#f1f5f9" strokeWidth="6" />
+                <circle cx="50" cy="50" r="20" fill="transparent" stroke="#f1f5f9" strokeWidth="6" />
+                
+                {/* Outer Ring: Safe Nodes (Blue) */}
+                <circle 
+                  cx="50" cy="50" r="40" 
+                  fill="transparent" 
+                  stroke="#3b5bf6" 
+                  strokeWidth="6" 
+                  strokeDasharray={`${(safePercent / 100) * 251.2} 251.2`}
+                  strokeLinecap="round"
+                />
+                
+                {/* Middle Ring: Malicious Nodes (Rose / Red) */}
+                <circle 
+                  cx="50" cy="50" r="30" 
+                  fill="transparent" 
+                  stroke="#ef4444" 
+                  strokeWidth="6" 
+                  strokeDasharray={`${typeof totalNodes === 'number' && totalNodes > 0 ? (maliciousNodes.length / totalNodes) * 188.4 : 0} 188.4`}
+                  strokeLinecap="round"
+                />
+                
+                {/* Inner Ring: Recovered Route Hops (Emerald) */}
+                <circle 
+                  cx="50" cy="50" r="20" 
+                  fill="transparent" 
+                  stroke="#10b981" 
+                  strokeWidth="6" 
+                  strokeDasharray={`${routeNodes.length > 0 ? 95 : 0} 125.6`}
+                  strokeLinecap="round"
+                />
+              </svg>
+
+              {/* Centered Statistic Number */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-2xl font-black text-slate-900 leading-none">{totalNodes}</span>
+                <span className="text-[8px] uppercase font-bold text-slate-400 mt-0.5">Nodes Active</span>
+                <span className="mt-1 px-2 py-0.5 rounded-full text-[6px] font-bold bg-emerald-100 text-emerald-700">
+                  {isConnected ? 'Optimal' : 'Offline'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Breakdown Legend with Pills (matching Reference Image) */}
+          <div className="space-y-2.5 pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                <span className="font-semibold text-slate-700">Safe Network Nodes</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-900">{safeNodes}</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                  {safePercent}%
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                <span className="font-semibold text-slate-700">Isolated Malicious</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-900">{maliciousNodes.length}</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">
+                  {typeof totalNodes === 'number' && totalNodes > 0 ? ((maliciousNodes.length / totalNodes) * 100).toFixed(0) : 0}%
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <span className="font-semibold text-slate-700">Active Route Hops</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-900">{routeNodes.length > 0 ? routeNodes.length - 1 : 0}</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                  Secured
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* MIDDLE SECTION: SIMULATION & ML INTELLIGENCE */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+        {/* Simulation Control & Status */}
+        <div className="dash-card p-6 rounded-3xl flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-2 mb-4">
-              <Activity className="w-5 h-5 text-indigo-600" />
-              <h2 className="text-lg font-bold text-slate-800">2. Simulation Status</h2>
+            <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Activity className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900">Simulation Status</h3>
+                  <p className="text-xs text-slate-400">Current execution lifecycle</p>
+                </div>
+              </div>
+              {renderStatusBadge(simStatus?.status)}
             </div>
-            <div className="space-y-3 mb-6">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-                <span className="text-sm text-slate-600">Current Status</span>
-                {renderStatusBadge(simStatus?.status)}
+
+            <div className="space-y-3.5 mb-6">
+              <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                <span className="text-slate-500 font-medium">Run ID</span>
+                <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg max-w-[200px] truncate" title={simStatus?.run_id}>
+                  {simStatus?.run_id || 'N/A'}
+                </span>
               </div>
-              <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-                <span className="text-sm text-slate-600">Run ID</span>
-                <span className="text-xs font-mono text-slate-500 max-w-[200px] truncate" title={simStatus?.run_id}>{simStatus?.run_id || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-                <span className="text-sm text-slate-600">Pass 1 Status</span>
+              <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                <span className="text-slate-500 font-medium">Pass 1 Status (Attack Simulation)</span>
                 {renderStatusBadge(simStatus?.status === 'completed' ? 'completed' : 'pending')}
               </div>
-              <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-                <span className="text-sm text-slate-600">Pass 2 Status</span>
+              <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                <span className="text-slate-500 font-medium">Pass 2 Status (Secured Simulation)</span>
                 {renderStatusBadge(simStatus?.status === 'completed' ? 'completed' : 'pending')}
+              </div>
+              <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                <span className="text-slate-500 font-medium">WSL2 NS-3 Engine</span>
+                <span className="font-bold text-xs text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg">
+                  {isConnected ? 'Available' : 'Offline'}
+                </span>
               </div>
             </div>
           </div>
+
           <button 
             onClick={handleRunSimulation}
             disabled={running || !isConnected}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+            className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-300 disabled:to-slate-400 text-white font-bold rounded-2xl shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
           >
-            {running ? <Activity className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />} 
-            {running ? 'Running...' : 'Run Simulation'}
+            {running ? <Activity className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />} 
+            {running ? 'Launching Simulation...' : 'Run New Simulation'}
           </button>
-        </section>
+        </div>
 
-        <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-4">
-            <Cpu className="w-5 h-5 text-purple-600" />
-            <h2 className="text-lg font-bold text-slate-800">3. ML & Detection</h2>
+        {/* ML & Threat Intelligence */}
+        <div className="dash-card p-6 rounded-3xl flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                  <Cpu className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900">ML & Anomaly Detection</h3>
+                  <p className="text-xs text-slate-400">Classical ML and LSTM classification</p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+                Hybrid Architecture
+              </span>
+            </div>
+
+            <div className="space-y-3.5">
+              <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                <span className="text-slate-500 font-medium">Classical ML Classifier</span>
+                {renderStatusBadge(simStatus?.classical_ml?.status)}
+              </div>
+              <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                <span className="text-slate-500 font-medium">LSTM Temporal Trust Engine</span>
+                {renderStatusBadge(dynamicTrust?.status)}
+              </div>
+              <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                <span className="text-slate-500 font-medium">Total Predictions</span>
+                <span className="font-bold text-slate-800">{dynamicTrust?.nodes?.length || 'N/A'} nodes evaluated</span>
+              </div>
+              <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                <span className="text-slate-500 font-medium">Detected Malicious</span>
+                <span className="font-bold text-rose-600">[{detectedMalicious.join(', ')}]</span>
+              </div>
+              <div className="flex justify-between items-center text-sm py-1">
+                <span className="text-slate-500 font-medium">Trust Scores Generation</span>
+                {renderStatusBadge(preventionSummary?.trust_scores ? 'completed' : 'pending')}
+              </div>
+            </div>
           </div>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Classical ML</span>
-              {renderStatusBadge(simStatus?.classical_ml?.status)}
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">LSTM Execution</span>
-              {renderStatusBadge(dynamicTrust?.status)}
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Total Predictions</span>
-              <span className="text-sm font-bold text-slate-800">{dynamicTrust?.nodes?.length || 'N/A'} nodes evaluated</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Detected Malicious</span>
-              <span className="text-sm font-bold text-red-600">[{detectedMalicious.join(', ')}]</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Trust Scores Gen.</span>
-              {renderStatusBadge(preventionSummary?.trust_scores ? 'completed' : 'pending')}
-            </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Model: <span className="font-semibold text-slate-700">RandomForest + LSTM</span></span>
+            <span className="font-bold text-emerald-600">Automated Pipeline</span>
           </div>
-        </section>
+        </div>
+
       </div>
 
+      {/* LOWER SECTION: PREVENTION & ROUTE RECOVERY */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-4">
-            <ShieldAlert className="w-5 h-5 text-red-500" />
-            <h2 className="text-lg font-bold text-slate-800">4. Prevention Status</h2>
+        
+        {/* Prevention Status Card */}
+        <div className="dash-card p-6 rounded-3xl">
+          <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-slate-900">Prevention Status</h3>
+                <p className="text-xs text-slate-400">Node isolation & restriction</p>
+              </div>
+            </div>
+            {renderStatusBadge(preventionSummary?.recovery_success)}
           </div>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Detected Threats</span>
-              <span className="text-sm font-bold text-red-600">[{detectedMalicious.join(', ')}]</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Forbidden Nodes</span>
-              <span className="text-sm font-bold text-slate-800">[{forbiddenNodes.join(', ')}]</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Excluded Count</span>
-              <span className="text-sm font-bold text-slate-800">{forbiddenNodes.length}</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Prevention Status</span>
-              {renderStatusBadge(preventionSummary?.recovery_success)}
-            </div>
-          </div>
-        </section>
 
-        <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-4">
-            <Route className="w-5 h-5 text-emerald-600" />
-            <h2 className="text-lg font-bold text-slate-800">5. Route Recovery</h2>
-          </div>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Route Request</span>
-              <span className="text-sm font-bold text-slate-800">{sourceNode} &rarr; {destNode}</span>
+          <div className="space-y-3.5">
+            <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+              <span className="text-slate-500 font-medium">Detected Threats</span>
+              <span className="font-bold text-rose-600">[{detectedMalicious.join(', ')}]</span>
             </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Eligible Safe Neighbors</span>
-              <span className="text-sm font-bold text-slate-800 truncate max-w-[200px]">[{safeNeighbors.join(', ')}]</span>
+            <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+              <span className="text-slate-500 font-medium">Forbidden Nodes</span>
+              <span className="font-bold text-slate-800">[{forbiddenNodes.join(', ')}]</span>
             </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Selected Next Hop</span>
-              <span className="text-sm font-bold text-blue-600">{selectedNextHop}</span>
+            <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+              <span className="text-slate-500 font-medium">Excluded Count</span>
+              <span className="font-bold text-slate-800">{forbiddenNodes.length}</span>
             </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Recovered Safe Route</span>
-              <span className="text-sm font-bold text-emerald-600">{routeNodes.join(' → ')}</span>
-            </div>
-            <div className="flex justify-between items-center pb-2 border-b border-slate-50">
-              <span className="text-sm text-slate-600">Route Validation</span>
-              {renderStatusBadge(routingPath?.route_available)}
+            <div className="flex justify-between items-center text-sm py-1">
+              <span className="text-slate-500 font-medium">Isolation State</span>
+              <span className="font-bold text-emerald-600">
+                {forbiddenNodes.length > 0 ? 'Enforced in NS-3' : 'Clear'}
+              </span>
             </div>
           </div>
-        </section>
+        </div>
+
+        {/* Route Recovery Card */}
+        <div className="dash-card p-6 rounded-3xl">
+          <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <Route className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-slate-900">Route Recovery</h3>
+                <p className="text-xs text-slate-400">Safe multi-hop path selection</p>
+              </div>
+            </div>
+            {renderStatusBadge(routingPath?.route_available)}
+          </div>
+
+          <div className="space-y-3.5">
+            <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+              <span className="text-slate-500 font-medium">Route Request</span>
+              <span className="font-bold text-slate-800">{sourceNode} &rarr; {destNode}</span>
+            </div>
+            <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+              <span className="text-slate-500 font-medium">Eligible Safe Neighbors</span>
+              <span className="font-bold text-slate-800 truncate max-w-[200px]">[{safeNeighbors.join(', ')}]</span>
+            </div>
+            <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+              <span className="text-slate-500 font-medium">Selected Next Hop</span>
+              <span className="font-bold text-blue-600">{selectedNextHop}</span>
+            </div>
+            <div className="flex justify-between items-center text-sm py-1">
+              <span className="text-slate-500 font-medium">Recovered Safe Route</span>
+              <span className="font-extrabold text-emerald-600">
+                {routeNodes.length > 0 ? routeNodes.join(' → ') : 'None'}
+              </span>
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <div className="flex items-center gap-2 mb-6">
-          <BarChart3 className="w-5 h-5 text-amber-500" />
-          <h2 className="text-lg font-bold text-slate-800">6. Performance Overview</h2>
+      {/* PERFORMANCE OVERVIEW (Reference Card & Bars Style) */}
+      <div className="dash-card p-6 rounded-3xl">
+        <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <BarChart3 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-slate-900">Performance Overview</h3>
+              <p className="text-xs text-slate-400">QoS comparison between attack and baseline</p>
+            </div>
+          </div>
+          <div className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">
+            Baseline vs Attack
+          </div>
         </div>
         
         {metricsComp?.baseline ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 font-bold uppercase mb-1">Baseline PDR</p>
-              <p className="text-2xl font-black text-emerald-600">{metricsComp.baseline.pdr_percent?.toFixed(2)}%</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80">
+              <p className="text-[11px] text-slate-400 font-bold uppercase mb-1">Baseline PDR</p>
+              <p className="text-xl font-black text-emerald-600">{metricsComp.baseline.pdr_percent?.toFixed(1)}%</p>
             </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 font-bold uppercase mb-1">Attack PDR</p>
-              <p className="text-2xl font-black text-red-600">{metricsComp.attack.pdr_percent?.toFixed(2)}%</p>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80">
+              <p className="text-[11px] text-slate-400 font-bold uppercase mb-1">Attack PDR</p>
+              <p className="text-xl font-black text-rose-600">{metricsComp.attack.pdr_percent?.toFixed(1)}%</p>
             </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 font-bold uppercase mb-1">Baseline Delay</p>
-              <p className="text-2xl font-black text-slate-700">{metricsComp.baseline.mean_delay_ms?.toFixed(2)}ms</p>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80">
+              <p className="text-[11px] text-slate-400 font-bold uppercase mb-1">Baseline Delay</p>
+              <p className="text-xl font-black text-slate-800">{metricsComp.baseline.mean_delay_ms?.toFixed(1)}ms</p>
             </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 font-bold uppercase mb-1">Attack Delay</p>
-              <p className="text-2xl font-black text-slate-700">{metricsComp.attack.mean_delay_ms?.toFixed(2)}ms</p>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80">
+              <p className="text-[11px] text-slate-400 font-bold uppercase mb-1">Attack Delay</p>
+              <p className="text-xl font-black text-slate-800">{metricsComp.attack.mean_delay_ms?.toFixed(1)}ms</p>
             </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 font-bold uppercase mb-1">Base T-Put</p>
-              <p className="text-2xl font-black text-slate-700">{metricsComp.baseline.throughput_kbps?.toFixed(2)}kbps</p>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80">
+              <p className="text-[11px] text-slate-400 font-bold uppercase mb-1">Base T-Put</p>
+              <p className="text-xl font-black text-slate-800">{metricsComp.baseline.throughput_kbps?.toFixed(1)}k</p>
             </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 font-bold uppercase mb-1">Attack T-Put</p>
-              <p className="text-2xl font-black text-slate-700">{metricsComp.attack.throughput_kbps?.toFixed(2)}kbps</p>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80">
+              <p className="text-[11px] text-slate-400 font-bold uppercase mb-1">Attack T-Put</p>
+              <p className="text-xl font-black text-slate-800">{metricsComp.attack.throughput_kbps?.toFixed(1)}k</p>
             </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 font-bold uppercase mb-1">Packet Loss (Attack)</p>
-              <p className="text-2xl font-black text-red-600">{metricsComp.attack.lost_packets}</p>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80">
+              <p className="text-[11px] text-slate-400 font-bold uppercase mb-1">Packet Loss</p>
+              <p className="text-xl font-black text-rose-600">{metricsComp.attack.lost_packets}</p>
             </div>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 font-bold uppercase mb-1">PDR Drop</p>
-              <p className="text-2xl font-black text-orange-500">{metricsComp.pdr_drop_percent?.toFixed(2)}%</p>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80">
+              <p className="text-[11px] text-slate-400 font-bold uppercase mb-1">PDR Drop</p>
+              <p className="text-xl font-black text-amber-500">{metricsComp.pdr_drop_percent?.toFixed(1)}%</p>
             </div>
           </div>
         ) : (
-          <div className="p-8 text-center bg-slate-50 rounded-xl text-slate-500 flex flex-col items-center">
-             <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
-             <p>Performance metrics not available yet. Run a simulation.</p>
+          <div className="p-8 text-center bg-slate-50 rounded-2xl text-slate-500 flex flex-col items-center justify-center">
+             <AlertCircle className="w-8 h-8 mb-2 text-slate-300" />
+             <p className="font-medium text-sm">Performance metrics not available yet. Run a simulation.</p>
           </div>
         )}
-      </section>
-
-      <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-bold text-slate-800">7. System Pipeline</h2>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => scrollBy('left')} 
-              disabled={!canScroll.left}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={() => scrollBy('right')} 
-              disabled={!canScroll.right}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-        <div 
-          className="flex items-center gap-2 w-full pb-4 overflow-x-auto [&::-webkit-scrollbar]:hidden" 
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-          ref={scrollRef}
-          onScroll={handleScroll}
-        >
-          {[
-            { name: "Simulation", active: isCompleted },
-            { name: "Dataset Gen", active: isCompleted },
-            { name: "Classical ML", active: simStatus?.classical_ml?.status === 'completed' },
-            { name: "LSTM", active: dynamicTrust?.status === 'completed' },
-            { name: "Trust Eval", active: preventionSummary?.trust_scores !== undefined },
-            { name: "Prevention", active: preventionSummary?.recovery_success !== undefined },
-            { name: "Trust Routing", active: routingPath?.route_available === true },
-            { name: "Performance", active: metricsComp?.baseline !== undefined }
-          ].map((step, idx, arr) => (
-            <React.Fragment key={idx}>
-              <div className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 w-32 text-center transition-all shrink-0 ${
-                  step.active ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-slate-50 opacity-60'
-                }`}>
-                <div className={`w-3 h-3 rounded-full mb-2 ${step.active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                <span className={`text-xs font-bold ${step.active ? 'text-emerald-700' : 'text-slate-500'}`}>{step.name}</span>
-                <span className="text-[10px] uppercase mt-1 text-slate-400">{step.active ? 'Completed' : 'Pending'}</span>
-              </div>
-              {idx < arr.length - 1 && (
-                <div className={`h-1 w-6 rounded-full shrink-0 ${step.active && arr[idx+1].active ? 'bg-emerald-400' : 'bg-slate-200'}`} />
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-      </section>
+      </div>
 
     </div>
   );

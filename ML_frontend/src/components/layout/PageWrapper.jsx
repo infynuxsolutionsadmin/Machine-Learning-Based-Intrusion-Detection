@@ -10,14 +10,14 @@ const PageWrapper = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen bg-[#ebedf7] text-slate-800 flex flex-col lg:flex-row font-sans selection:bg-blue-100 selection:text-blue-900">
       <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
       
-      <div className="flex-1 flex flex-col min-w-0 lg:pl-64 transition-all duration-300">
+      <div className="flex-1 flex flex-col min-w-0 lg:pl-68 transition-all duration-300">
         <Navbar toggleSidebar={toggleSidebar} />
         
-        <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 px-4 sm:px-6 lg:px-8 pb-12 overflow-y-auto">
+          <div className="max-w-[1400px] mx-auto">
             {children}
           </div>
         </main>

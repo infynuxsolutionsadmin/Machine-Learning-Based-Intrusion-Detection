@@ -1,34 +1,35 @@
 {
   "status": "completed",
-  "run_id": "20261017_163853_bc67d850_8nodes_attack2_4",
-  "nNodes": 8,
-  "csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\run_20261017_163853_bc67d850_8nodes_attack2_4.csv",
-  "xml_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\run_20261017_163853_bc67d850_8nodes_attack2_4.xml",
-  "trace_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\run_20261017_163853_bc67d850_8nodes_attack2_4_trace.csv",
-  "route_tr_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\run_20261017_163853_bc67d850_8nodes_attack2_4_route_p2.tr",
-  "routing_json_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\run_20261017_163853_bc67d850_8nodes_attack2_4_routing.json",
-  "fl_metrics_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\20261017_163853_bc67d850_8nodes_attack2_4\\fl\\fl_metrics.json",
-  "baseline_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\20261017_163853_bc67d850_8nodes_attack2_4\\baseline\\run_20261017_163853_bc67d850_8nodes_attack2_4_baseline.csv",
-  "baseline_energy_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\20261017_163853_bc67d850_8nodes_attack2_4\\baseline\\run_20261017_163853_bc67d850_8nodes_attack2_4_baseline_energy.csv",
-  "energy_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\ML_MANET\\manet-backend\\simulation\\results\\dynamic\\run_20261017_163853_bc67d850_8nodes_attack2_4_energy.csv",
+  "protocol": "AODV",
+  "run_id": "20261112_235233_27a2019d_15nodes_attack8_5",
+  "nNodes": 15,
+  "csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\run_20261112_235233_27a2019d_15nodes_attack8_5.csv",
+  "xml_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\run_20261112_235233_27a2019d_15nodes_attack8_5.xml",
+  "trace_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\run_20261112_235233_27a2019d_15nodes_attack8_5_trace.csv",
+  "route_tr_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\run_20261112_235233_27a2019d_15nodes_attack8_5_route_p2.tr",
+  "routing_json_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\run_20261112_235233_27a2019d_15nodes_attack8_5_routing.json",
+  "fl_metrics_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\20261112_235233_27a2019d_15nodes_attack8_5\\fl\\fl_metrics.json",
+  "baseline_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\20261112_235233_27a2019d_15nodes_attack8_5\\baseline\\run_20261112_235233_27a2019d_15nodes_attack8_5_baseline.csv",
+  "baseline_energy_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\20261112_235233_27a2019d_15nodes_attack8_5\\baseline\\run_20261112_235233_27a2019d_15nodes_attack8_5_baseline_energy.csv",
+  "energy_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_2026\\Mahesh_Batch\\ML_MANET\\ML_backend\\simulation\\results\\dynamic\\run_20261112_235233_27a2019d_15nodes_attack8_5_energy.csv",
   "error": null,
-  "duration_seconds": 78.3,
+  "duration_seconds": 113.4,
   "attackEnabled": true,
   "maliciousNodes": [
-    2,
-    4
+    8,
+    5
   ],
   "classical_ml": {
     "status": "completed",
-    "run_id": "20261017_163853_bc67d850_8nodes_attack2_4",
-    "dataset_rows": 1192,
+    "run_id": "20261112_235233_27a2019d_15nodes_attack8_5",
+    "dataset_rows": 2235,
     "features": [
       "rx",
       "control_message_frequency"
     ],
     "models": {
       "RandomForest": {
-        "prediction_count": 1192
+        "prediction_count": 2235
       },
       "XGBoost": {
         "error": "No module named 'xgboost'"
@@ -37,19 +38,37 @@
         "error": "No module named 'catboost'"
       },
       "SVM": {
-        "prediction_count": 1192
+        "prediction_count": 2235
       },
       "MLP": {
-        "prediction_count": 1192
+        "prediction_count": 2235
       }
     }
   },
   "attackerNode": 4,
-  "rng_seed": 7683,
+  "rng_seed": 6603,
   "sourceNode": 0,
-  "destNode": 7,
+  "destNode": 14,
   "attack_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_ppt-2026\\Vijay_Batch\\MANET\\manet-backend\\simulation\\results\\dynamic\\run_20260923_164711_96c4f728_8nodes_attack3_4.csv",
   "attack_energy_csv_path": null,
   "trust_aware_csv_path": "C:\\Users\\divya\\OneDrive\\Desktop\\Final year_ppt-2026\\Vijay_Batch\\MANET\\manet-backend\\simulation\\results\\dynamic\\run_20260923_164711_96c4f728_8nodes_attack3_4_p2.csv",
-  "trust_aware_energy_csv_path": null
+  "trust_aware_energy_csv_path": null,
+  "persistence": {
+    "core": {
+      "status": "success",
+      "run_id": "20261112_235233_27a2019d_15nodes_attack8_5",
+      "simulation_run_id": 9,
+      "flow_metrics_count": 280,
+      "node_energy_count": 30,
+      "artifacts_count": 17
+    },
+    "error": "Node ID 8 out of valid range [0, 7] at row 8",
+    "checkpoint": {
+      "checkpoint_status": "COMPLETED",
+      "busy": 0,
+      "log_frames": 37,
+      "checkpointed_frames": 37,
+      "error": null
+    }
+  }
 }

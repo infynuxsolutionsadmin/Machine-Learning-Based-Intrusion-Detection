@@ -11,10 +11,26 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
+#include <iomanip>
+#include <cstdio>
 
 using namespace ns3;
 
 std::ofstream g_traceFile;
+
+struct PreventionEventRecord {
+    uint32_t sequence;
+    double timeSec;
+    uint32_t nodeId;
+    std::string actionType;
+    std::string executionStatus;
+    std::string triggerSource;
+    std::string details;
+};
+
+static std::vector<PreventionEventRecord> g_preventionEvents;
+static uint32_t g_preventionSequence = 1;
 
 static void LogTrustMetrics(NodeContainer nodes, Time interval)
 {
@@ -53,25 +69,47 @@ static void LogTrustMetrics(NodeContainer nodes, Time interval)
     Simulator::Schedule(interval, &LogTrustMetrics, nodes, interval);
 }
 
-static void ScheduleBlacklist(NodeContainer nodes, uint32_t maliciousNodeId, double atTime)
+static void ScheduleBlacklist(NodeContainer nodes, uint32_t maliciousNodeId, double atTime, std::string triggerSource = "LSTM_PREDICTION")
 {
     if (maliciousNodeId >= nodes.GetN()) return;
     Ptr<Node> malNode = nodes.Get(maliciousNodeId);
     Ipv4Address malIp = malNode->GetObject<Ipv4>()->GetAddress(1, 0).GetLocal();
-    std::cout << "[TRUST] At time " << atTime << "s, blacklisting node " << maliciousNodeId << " (" << malIp << ")" << std::endl;
+    std::cout << "[TRUST] At time " << atTime << "s, blacklisting node " << maliciousNodeId << " (" << malIp << ") via " << triggerSource << std::endl;
     
-    // Hard isolation constraint
+    // 1. Hard interface isolation constraint
     Ptr<Ipv4> ipv4 = malNode->GetObject<Ipv4>();
     if (ipv4 && ipv4->GetNInterfaces() > 1) {
         if (ipv4->IsUp(1)) {
             ipv4->SetDown(1);
+            bool isDown = !ipv4->IsUp(1);
             std::cout << "[NS3 ROUTING] Node " << maliciousNodeId << " = MALICIOUS" << std::endl;
             std::cout << "[NS3 ROUTING] RREQ forwarding = BLOCKED (Interface Down)" << std::endl;
+            
+            PreventionEventRecord ev;
+            ev.sequence = g_preventionSequence++;
+            ev.timeSec = atTime;
+            ev.nodeId = maliciousNodeId;
+            ev.actionType = "INTERFACE_DOWN";
+            ev.executionStatus = isDown ? "SUCCESS" : "FAILED";
+            ev.triggerSource = triggerSource;
+            ev.details = isDown ? "Interface 1 set down. Post-check verified !ipv4->IsUp(1)." : "Interface 1 SetDown called but interface remains Up.";
+            g_preventionEvents.push_back(ev);
         } else {
             std::cout << "[NS3 ROUTING] Node " << maliciousNodeId << " interface is already DOWN. Safely ignoring duplicate blacklist request." << std::endl;
+            
+            PreventionEventRecord ev;
+            ev.sequence = g_preventionSequence++;
+            ev.timeSec = atTime;
+            ev.nodeId = maliciousNodeId;
+            ev.actionType = "INTERFACE_DOWN";
+            ev.executionStatus = "DUPLICATE_IGNORED";
+            ev.triggerSource = triggerSource;
+            ev.details = "Node interface is already DOWN. Safely ignoring duplicate isolation request.";
+            g_preventionEvents.push_back(ev);
         }
     }
     
+    // 2. AODV Protocol Blacklist Dispatched
     for (uint32_t i = 0; i < nodes.GetN(); ++i) {
         if (i == maliciousNodeId) continue;
         Ptr<Node> node = nodes.Get(i);
@@ -94,6 +132,16 @@ static void ScheduleBlacklist(NodeContainer nodes, uint32_t maliciousNodeId, dou
             aodvDirect->BlacklistNode(malIp);
         }
     }
+
+    PreventionEventRecord aodvEv;
+    aodvEv.sequence = g_preventionSequence++;
+    aodvEv.timeSec = atTime;
+    aodvEv.nodeId = maliciousNodeId;
+    aodvEv.actionType = "AODV_BLACKLIST";
+    aodvEv.executionStatus = "UNVERIFIED";
+    aodvEv.triggerSource = triggerSource;
+    aodvEv.details = "BlacklistNode dispatched to AODV protocol kernel.";
+    g_preventionEvents.push_back(aodvEv);
 }
 
 static void ApplyLARFilter(NodeContainer nodes, uint32_t srcId, uint32_t dstId, double margin)
@@ -212,8 +260,12 @@ int main(int argc, char *argv[])
     uint32_t destNode = 255; // 255 means use nNodes-1
 
     double simArea = 150.0;
+    std::string runId = "default_run";
+    std::string preventionEventsFile = "";
 
     CommandLine cmd;
+    cmd.AddValue("runId",                "Simulation run identifier",   runId);
+    cmd.AddValue("preventionEventsFile", "Output prevention events JSON", preventionEventsFile);
     cmd.AddValue("nNodes",         "Number of nodes",             nNodes);
     cmd.AddValue("simulationTime", "Simulation time (s)",         simulationTime);
     cmd.AddValue("maliciousNodes", "Attacker node IDs (CSV)",     maliciousNodes);
@@ -407,6 +459,7 @@ int main(int argc, char *argv[])
     if (!trustFile.empty()) {
         std::ifstream tfile(trustFile);
         if (tfile.is_open()) {
+            std::cout << "[TRUST FILE] Successfully opened trustFile: " << trustFile << std::endl;
             std::string line;
             // Skip header if any
             std::getline(tfile, line);
@@ -421,10 +474,13 @@ int main(int argc, char *argv[])
                     uint32_t nid = std::stoul(nodeStr);
                     int is_mal = std::stoi(isMalStr);
                     if (is_mal == 1) {
-                        Simulator::Schedule(Seconds(t), &ScheduleBlacklist, nodes, nid, t);
+                        std::string trigger = (t <= 1.0) ? "STATIC_EXCLUSION" : "LSTM_PREDICTION";
+                        Simulator::Schedule(Seconds(t), &ScheduleBlacklist, nodes, nid, t, trigger);
                     }
                 }
             }
+        } else {
+            std::cout << "[ERROR] Could not open trustFile: " << trustFile << std::endl;
         }
     }
 
@@ -461,6 +517,37 @@ int main(int argc, char *argv[])
             }
         }
         energyStream.close();
+    }
+
+    // Output prevention events JSON if requested
+    if (!preventionEventsFile.empty()) {
+        std::string tmpFile = preventionEventsFile + ".tmp";
+        std::ofstream pef(tmpFile.c_str());
+        if (pef.is_open()) {
+            pef << "{\n";
+            pef << "  \"run_id\": \"" << runId << "\",\n";
+            pef << "  \"protocol\": \"AODV\",\n";
+            pef << "  \"total_events\": " << g_preventionEvents.size() << ",\n";
+            pef << "  \"events\": [\n";
+            for (size_t i = 0; i < g_preventionEvents.size(); ++i) {
+                const auto& ev = g_preventionEvents[i];
+                pef << "    {\n";
+                pef << "      \"sequence\": " << ev.sequence << ",\n";
+                pef << "      \"time_sec\": " << std::fixed << std::setprecision(2) << ev.timeSec << ",\n";
+                pef << "      \"node_id\": " << ev.nodeId << ",\n";
+                pef << "      \"action_type\": \"" << ev.actionType << "\",\n";
+                pef << "      \"execution_status\": \"" << ev.executionStatus << "\",\n";
+                pef << "      \"trigger_source\": \"" << ev.triggerSource << "\",\n";
+                pef << "      \"details\": \"" << ev.details << "\",\n";
+                pef << "      \"error_message\": null\n";
+                pef << "    }" << (i + 1 < g_preventionEvents.size() ? "," : "") << "\n";
+            }
+            pef << "  ]\n";
+            pef << "}\n";
+            pef.flush();
+            pef.close();
+            std::rename(tmpFile.c_str(), preventionEventsFile.c_str());
+        }
     }
 
     Simulator::Destroy();

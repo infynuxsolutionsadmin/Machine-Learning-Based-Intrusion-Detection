@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import os
 import json
@@ -125,7 +125,8 @@ def api_simulation_status():
         "duration_seconds": current_simulation.get("duration_seconds"),
         "attackEnabled": current_simulation.get("attackEnabled", False),
         "maliciousNodes": current_simulation.get("maliciousNodes", []),
-        "classical_ml": current_simulation.get("classical_ml", None)
+        "classical_ml": current_simulation.get("classical_ml", None),
+        "persistence": current_simulation.get("persistence", None)
     }
 
 @app.get("/api/simulation/summary")
@@ -541,3 +542,76 @@ def get_prevention_summary():
         "trust_threshold": 0.5,
         "routing_method": "AODV-based routing enhanced with a Geographic Request Zone mechanism"
     }
+
+
+@app.get("/api/prevention/events")
+def get_prevention_events(
+    run_id: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """
+    Returns authentic chronological NS-3 prevention and mitigation event records
+    directly from the SQLite database. Supports pagination via limit and offset.
+    """
+    target_run_id = run_id or current_simulation.get("run_id")
+    if not target_run_id:
+        raise HTTPException(status_code=400, detail="Missing run_id and no active simulation run.")
+
+    from database import get_write_session, SimulationRun, PreventionEvent, ArtifactIngestionLedger
+    with get_write_session() as session:
+        run = session.query(SimulationRun).filter_by(run_id=target_run_id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail=f"Simulation run '{target_run_id}' not found.")
+
+        # Check ledger status
+        latest_ledger = (
+            session.query(ArtifactIngestionLedger)
+            .filter_by(simulation_run_id=run.id, artifact_type="prevention_events_json")
+            .order_by(ArtifactIngestionLedger.attempt_number.desc())
+            .first()
+        )
+
+        total_count = session.query(PreventionEvent).filter_by(simulation_run_id=run.id).count()
+
+        events = (
+            session.query(PreventionEvent)
+            .filter_by(simulation_run_id=run.id)
+            .order_by(PreventionEvent.sequence.asc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        event_items = [
+            {
+                "id": ev.id,
+                "sequence": ev.sequence,
+                "time_sec": ev.time_sec,
+                "node_id": ev.node_id,
+                "action_type": ev.action_type,
+                "execution_status": ev.execution_status,
+                "trigger_source": ev.trigger_source,
+                "details": ev.details,
+                "error_message": ev.error_message,
+                "created_at": ev.created_at.isoformat() if ev.created_at else None,
+            }
+            for ev in events
+        ]
+
+        ledger_status = (
+            latest_ledger.ingestion_status
+            if latest_ledger
+            else ("HISTORICAL_PILOT" if target_run_id == "20261111_225145_8e3c4f7c_8nodes_attack2_4" else "UNINGESTED")
+        )
+
+        return {
+            "run_id": target_run_id,
+            "simulation_run_id": run.id,
+            "ledger_status": ledger_status,
+            "total_events": total_count,
+            "limit": limit,
+            "offset": offset,
+            "events": event_items,
+        }
+

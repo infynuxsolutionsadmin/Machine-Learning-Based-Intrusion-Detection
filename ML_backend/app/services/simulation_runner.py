@@ -87,6 +87,7 @@ CURRENT_RUN_JSON_PATH = os.path.join(DYNAMIC_RESULTS_DIR, "current_run.json")
 # ── Shared state readable by FastAPI endpoints ─────────────────────────────
 default_simulation: dict = {
     "status"           : "idle",   # idle | running | completed | failed
+    "protocol"         : "AODV",
     "run_id"           : None,
     "nNodes"           : 8,        # default matches verified 8-node project
     "csv_path"         : None,
@@ -212,10 +213,13 @@ def run_simulation(
         # Pass 2 gets its own route trace so it's not overwritten by Pass 1
         route_tr_p2_name = f"run_{run_id}_route_p2.tr"
         route_tr_p2_win  = os.path.join(DYNAMIC_RESULTS_DIR, route_tr_p2_name)
+        prevention_json_name = f"run_{run_id}_prevention_events.json"
+        prevention_win_path  = os.path.join(DYNAMIC_RESULTS_DIR, prevention_json_name)
         xml_wsl_dest    = _win_to_wsl(xml_win_path)
         trace_wsl_dest  = _win_to_wsl(trace_win_path)
         route_tr_wsl    = _win_to_wsl(route_tr_win)
         route_tr_p2_wsl = _win_to_wsl(route_tr_p2_win)
+        prevention_wsl_dest = _win_to_wsl(prevention_win_path)
         dyn_wsl_dir     = _win_to_wsl(DYNAMIC_RESULTS_DIR)
         if demoTopology:
             simArea = 600.0
@@ -271,7 +275,7 @@ def run_simulation(
         area_arg = f"--simArea={simArea} " if simArea is not None else ""
         demo_arg = "--demoTopology=true " if demoTopology else ""
 
-        def get_wsl_cmd(trust_file_arg="", malicious_override=None, route_trace_override=None, trace_override=None):
+        def get_wsl_cmd(trust_file_arg="", malicious_override=None, route_trace_override=None, trace_override=None, prevention_arg=""):
             mal = malicious_override if malicious_override is not None else malicious_str
             rt_file = route_trace_override if route_trace_override else route_tr_name
             route_tr_dest_wsl = _win_to_wsl(os.path.join(DYNAMIC_RESULTS_DIR, rt_file))
@@ -279,7 +283,10 @@ def run_simulation(
             tr_file = trace_override if trace_override else trace_filename
             tr_dest_wsl = _win_to_wsl(os.path.join(DYNAMIC_RESULTS_DIR, tr_file))
             
+            trust_copy = f"([ -f '{lstm_pred_wsl}' ] && cp '{lstm_pred_wsl}' '{NS3_DIR_WSL}/{lstm_pred_name}' || true) && " if trust_file_arg else ""
+            
             return (
+                f"{trust_copy}"
                 f"cd '{NS3_DIR_WSL}' && "
                 f"./ns3 run 'scratch/manet-sim "
                 f"--nNodes={nNodes} "
@@ -291,12 +298,14 @@ def run_simulation(
                 f"--routeTraceFile={rt_file} "
                 f"--energyFile={energy_filename} "
                 f"{area_arg}"
-                f"{trust_file_arg}' && "
+                f"{trust_file_arg}"
+                f"{prevention_arg}' && "
                 f"mkdir -p '{dyn_wsl_dir}' && "
                 f"cp '{xml_filename}' '{xml_wsl_dest}' && "
                 f"([ -f '{tr_file}' ] && cp '{tr_file}' '{tr_dest_wsl}' || true) && "
                 f"([ -f '{rt_file}' ] && cp '{rt_file}' '{route_tr_dest_wsl}' || true) && "
-                f"([ -f '{energy_filename}' ] && cp '{energy_filename}' '{energy_wsl_dest}' || true)"
+                f"([ -f '{energy_filename}' ] && cp '{energy_filename}' '{energy_wsl_dest}' || true) && "
+                f"([ -f '{prevention_json_name}' ] && cp '{prevention_json_name}' '{prevention_wsl_dest}' || true)"
             )
 
         def run_ns3(cmd, expected_xml_win_path, is_pass1=False):
@@ -367,6 +376,7 @@ def run_simulation(
         sim_src_wsl = _win_to_wsl(sim_src_win)
 
         baseline_cmd = (
+            f"cp '{sim_src_wsl}' '{NS3_DIR_WSL}/scratch/manet-sim/manet-sim.cc' && "
             f"cp '{sim_src_wsl}' '{NS3_DIR_WSL}/scratch/manet-sim.cc' && "
             f"cd '{NS3_DIR_WSL}' && "
             f"./ns3 run 'scratch/manet-sim "
@@ -451,16 +461,17 @@ def run_simulation(
             print(f"[TRUST ROUTING] Pass 2 started with trustFile (enforcing exclusion + trust-routing)")
             run_ns3(
                 get_wsl_cmd(
-                    trust_file_arg=f"--trustFile={lstm_pred_wsl} ",
+                    trust_file_arg=f"--trustFile={lstm_pred_name} ",
                     malicious_override="",         # no black hole in pass 2
                     route_trace_override=route_tr_p2_name,  # separate route file
-                    trace_override=trace_filename.replace('.csv', '_p2.csv')
+                    trace_override=trace_filename.replace('.csv', '_p2.csv'),
+                    prevention_arg=f"--preventionEventsFile={prevention_json_name} --runId={run_id} "
                 ),
                 xml_win_path
             )
             print(f"[TRUST ROUTING] Pass 2 completed")
             print(f"[TRUST ROUTING] Final NS-3 route parsed")
-            
+
             # Use pass-2 route trace for parsing (preferred)
             if os.path.exists(route_tr_p2_win):
                 route_tr_win = route_tr_p2_win
@@ -569,11 +580,87 @@ def run_simulation(
             "duration_seconds" : duration,
         })
 
+        # Flush current_simulation to disk so ingestion service can read accurate authoritative metadata
+        try:
+            with open(CURRENT_RUN_JSON_PATH, "w", encoding="utf-8") as f:
+                json.dump(current_simulation, f, indent=2)
+        except Exception as e:
+            print(f"[PERSISTENCE] Warning: Failed to pre-flush current_run.json: {e}")
+
+        # Database persistence for new simulation run
+        persistence_results = {}
+        try:
+            from database import (
+                ingest_simulation_core,
+                ingest_classical_ml_predictions,
+                ingest_trust_evaluations,
+                ingest_routing_records,
+                ingest_prevention_events,
+            )
+            # 1. Core simulation data (simulation_runs, metrics, node_energy, artifacts)
+            core_res = ingest_simulation_core(run_id)
+            persistence_results["core"] = core_res
+            print(f"[PERSISTENCE] Core simulation data ingested for {run_id}: {core_res.get('status')}")
+
+            # 2. Classical ML predictions
+            classical_ml_csv = os.path.join(DYNAMIC_RESULTS_DIR, f"run_{run_id}_classical_ml_predictions.csv")
+            if os.path.exists(classical_ml_csv):
+                ml_res = ingest_classical_ml_predictions(run_id)
+                persistence_results["ml_predictions"] = ml_res
+                print(f"[PERSISTENCE] Classical ML predictions ingested for {run_id}: {ml_res.get('status')} ({ml_res.get('inserted')} rows)")
+            else:
+                persistence_results["ml_predictions"] = {"status": "SKIPPED_NO_ARTIFACT"}
+
+            # 3. Trust evaluations (LSTM predictions)
+            lstm_pred_csv = os.path.join(DYNAMIC_RESULTS_DIR, f"run_{run_id}_lstm_pred.csv")
+            if os.path.exists(lstm_pred_csv):
+                trust_res = ingest_trust_evaluations(run_id)
+                persistence_results["trust_evaluations"] = trust_res
+                print(f"[PERSISTENCE] Trust evaluations ingested for {run_id}: {trust_res.get('status')} ({trust_res.get('inserted')} rows)")
+            else:
+                persistence_results["trust_evaluations"] = {"status": "SKIPPED_NO_ARTIFACT"}
+
+            # 4. Routing records
+            routing_json_path = os.path.join(DYNAMIC_RESULTS_DIR, f"run_{run_id}_routing.json")
+            if os.path.exists(routing_json_path):
+                route_res = ingest_routing_records(run_id)
+                persistence_results["routing_records"] = route_res
+                print(f"[PERSISTENCE] Routing records ingested for {run_id}: {route_res.get('status')} ({route_res.get('inserted')} rows)")
+            else:
+                persistence_results["routing_records"] = {"status": "SKIPPED_NO_ARTIFACT"}
+
+            # 5. Prevention events (authentic NS-3 drops)
+            pe_res = ingest_prevention_events(run_id)
+            persistence_results["prevention_events"] = pe_res
+            print(f"[PERSISTENCE] Prevention events ingested for {run_id}: {pe_res.get('status')} ({pe_res.get('inserted')} rows)")
+
+        except Exception as p_err:
+            print(f"[PERSISTENCE] Warning: Automatic database ingestion failed: {p_err}")
+            persistence_results["error"] = str(p_err)
+
+        # 6. Automatic safe WAL checkpoint attempt after all ingestion transactions are committed
+        checkpoint_diag = None
+        try:
+            from database import safe_wal_checkpoint
+            checkpoint_diag = safe_wal_checkpoint()
+            print(
+                f"[CHECKPOINT] WAL checkpoint attempt: {checkpoint_diag.get('checkpoint_status')} "
+                f"(busy={checkpoint_diag.get('busy')}, log_frames={checkpoint_diag.get('log_frames')}, "
+                f"checkpointed={checkpoint_diag.get('checkpointed_frames')})"
+            )
+        except Exception as ckpt_err:
+            print(f"[CHECKPOINT] Warning: WAL checkpoint failed to execute: {ckpt_err}")
+            checkpoint_diag = {"checkpoint_status": "ERROR", "error": str(ckpt_err)}
+
+        persistence_results["checkpoint"] = checkpoint_diag
+        current_simulation["persistence"] = persistence_results
+
         return {
             "run_id"           : run_id,
             "nNodes"           : nNodes,
             "status"           : "completed",
             "duration_seconds" : duration,
+            "persistence_results": persistence_results,
         }
 
     except subprocess.TimeoutExpired:

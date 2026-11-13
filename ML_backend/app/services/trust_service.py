@@ -173,16 +173,11 @@ def get_dynamic_trust_analysis(
     lstm_status = "unavailable"
     lstm_reason = "No per-node trace was produced by this simulation run."
 
-    if trace_available and os.path.exists(LSTM_MODEL_PATH) and os.path.exists(PREDICT_SCRIPT):
-        # Use a temp output path so we don't collide
+    if trace_available:
         pred_output = trace_csv_path.replace("_trace.csv", "_lstm_pred.csv")
-        try:
-            result = subprocess.run(
-                [sys.executable, PREDICT_SCRIPT, trace_csv_path, pred_output],
-                capture_output=True, text=True, timeout=60,
-                cwd=BASE_DIR  # model loaded relative to BASE_DIR
-            )
-            if result.returncode == 0 and os.path.exists(pred_output):
+        # 1. Reuse existing authentic simulation artifact without modifying its bytes
+        if os.path.exists(pred_output):
+            try:
                 with open(pred_output, mode='r', encoding='utf-8') as f:
                     reader = csv.DictReader(f)
                     for row in reader:
@@ -202,14 +197,55 @@ def get_dynamic_trust_analysis(
                         })
                 lstm_status = "completed"
                 lstm_reason = None
-            else:
+            except Exception as e:
                 lstm_status = "failed"
-                lstm_reason = (result.stderr or result.stdout or "Unknown error")[:300]
-        except Exception as e:
-            lstm_status = "failed"
-            lstm_reason = str(e)[:300]
-    elif not os.path.exists(LSTM_MODEL_PATH):
-        lstm_reason = "LSTM model file not found."
+                lstm_reason = f"Failed to read existing LSTM artifact: {e}"[:300]
+        elif os.path.exists(LSTM_MODEL_PATH) and os.path.exists(PREDICT_SCRIPT):
+            # 2. Only if original artifact does not exist, run inference to an isolated temporary file
+            import tempfile
+            tmp_pred_output = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix="_lstm_pred.csv", delete=False) as tmp_f:
+                    tmp_pred_output = tmp_f.name
+                result = subprocess.run(
+                    [sys.executable, PREDICT_SCRIPT, trace_csv_path, tmp_pred_output],
+                    capture_output=True, text=True, timeout=60,
+                    cwd=BASE_DIR  # model loaded relative to BASE_DIR
+                )
+                if result.returncode == 0 and os.path.exists(tmp_pred_output):
+                    with open(tmp_pred_output, mode='r', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            is_mal = int(row.get('is_malicious', 1)) if 'is_malicious' in row else 1
+                            score = float(row.get('score', 0.0 if is_mal else 1.0))
+                            node_id = int(row['node'])
+                            ground_truth = 1 if (attackEnabled and maliciousNodes and node_id in maliciousNodes) else 0
+                            lstm_predictions.append({
+                                "time":       float(row['time']),
+                                "node":       node_id,
+                                "predicted_trust_score": score,
+                                "predicted_malicious": is_mal,
+                                "ground_truth_malicious": ground_truth,
+                                "trust_threshold": 0.5,
+                                "prediction": "Malicious" if is_mal == 1 else "Trusted",
+                                "action":     "Blacklisted" if is_mal == 1 else "None"
+                            })
+                    lstm_status = "completed"
+                    lstm_reason = None
+                else:
+                    lstm_status = "failed"
+                    lstm_reason = (result.stderr or result.stdout or "Unknown error")[:300]
+            except Exception as e:
+                lstm_status = "failed"
+                lstm_reason = str(e)[:300]
+            finally:
+                if tmp_pred_output and os.path.exists(tmp_pred_output):
+                    try:
+                        os.remove(tmp_pred_output)
+                    except Exception:
+                        pass
+        elif not os.path.exists(LSTM_MODEL_PATH):
+            lstm_reason = "LSTM model file not found."
     elif not trace_available:
         pass  # reason already set
 

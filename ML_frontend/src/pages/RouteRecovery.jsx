@@ -1,37 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import { Route, ArrowRight, CheckCircle, XCircle, AlertCircle, Info, ShieldCheck } from 'lucide-react';
 import { fetchPreventionSummary, fetchRoutingPath, fetchSimulationStatus } from '../services/apiService';
+import { useRun } from '../context/RunContext';
 
 const RouteRecovery = () => {
+  const { selectedRunId } = useRun();
   const [summary, setSummary] = useState(null);
   const [routingPath, setRoutingPath] = useState(null);
   const [simStatus, setSimStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadData = () => {
-    Promise.allSettled([
-      fetchPreventionSummary(),
-      fetchRoutingPath(),
-      fetchSimulationStatus()
-    ]).then(([sumRes, pathRes, simRes]) => {
-      let anyError = false;
-      if (sumRes.status === 'fulfilled') setSummary(sumRes.value); else anyError = true;
-      if (pathRes.status === 'fulfilled') setRoutingPath(pathRes.value);
-      if (simRes.status === 'fulfilled') setSimStatus(simRes.value); else anyError = true;
-      
-      if (anyError && !sumRes.value && !pathRes.value) {
-        setError("Unable to load data from backend.");
-      }
-      setLoading(false);
-    });
-  };
-
   useEffect(() => {
+    let isCurrent = true;
+    setLoading(true);
+    setError(null);
+
+    const loadData = () => {
+      Promise.allSettled([
+        fetchPreventionSummary(selectedRunId),
+        fetchRoutingPath(selectedRunId),
+        fetchSimulationStatus()
+      ]).then(([sumRes, pathRes, simRes]) => {
+        if (!isCurrent) return;
+
+        let anyError = false;
+        if (sumRes.status === 'fulfilled') setSummary(sumRes.value); else anyError = true;
+        if (pathRes.status === 'fulfilled') setRoutingPath(pathRes.value);
+        if (simRes.status === 'fulfilled') setSimStatus(simRes.value); else anyError = true;
+        
+        if (anyError && !sumRes.value && !pathRes.value) {
+          setError("Unable to load data from backend.");
+        }
+        setLoading(false);
+      });
+    };
+
     loadData();
-    window.addEventListener('simulation-completed', loadData);
-    return () => window.removeEventListener('simulation-completed', loadData);
-  }, []);
+
+    const handleSimulationCompleted = () => {
+      if (!selectedRunId) {
+        loadData();
+      }
+    };
+
+    window.addEventListener('simulation-completed', handleSimulationCompleted);
+    return () => {
+      isCurrent = false;
+      window.removeEventListener('simulation-completed', handleSimulationCompleted);
+    };
+  }, [selectedRunId]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
@@ -55,10 +73,17 @@ const RouteRecovery = () => {
 
   const afterNodes = routingPath?.route_nodes || [];
   const isRecoverySuccessful = summary?.recovery_success;
-  const sourceNode = simStatus?.source ?? routingPath?.source ?? summary?.source ?? 'N/A';
-  const destNode = simStatus?.destination ?? routingPath?.destination ?? summary?.destination ?? 'N/A';
+  const sourceNode = selectedRunId
+    ? (routingPath?.source_node ?? routingPath?.source ?? summary?.source ?? 'N/A')
+    : (routingPath?.source_node ?? routingPath?.source ?? summary?.source ?? simStatus?.source ?? 'N/A');
+  const destNode = selectedRunId
+    ? (routingPath?.destination_node ?? routingPath?.destination ?? summary?.destination ?? 'N/A')
+    : (routingPath?.destination_node ?? routingPath?.destination ?? summary?.destination ?? simStatus?.destination ?? 'N/A');
   const routingMethod = summary?.routing_method || 'N/A';
-  const maliciousNodesSet = new Set(simStatus?.maliciousNodes || []);
+  const maliciousNodes = selectedRunId
+    ? (routingPath?.maliciousNodes ?? [])
+    : (routingPath?.maliciousNodes ?? simStatus?.maliciousNodes ?? []);
+  const maliciousNodesSet = new Set(maliciousNodes);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10 animate-in fade-in duration-300">

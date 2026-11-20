@@ -10,7 +10,7 @@ import sys
 import uuid
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 from pathlib import Path
 from app.simulation.parser import NS3Parser
@@ -77,8 +77,78 @@ ROUTE_PARSER_SCRIPT = os.path.join(BASE_DIR, "simulation", "parse_route.py")
 FL_SERVER_SCRIPT    = os.path.join(BASE_DIR, "federated_learning", "fl_server.py")
 PREDICT_SCRIPT      = os.path.join(BASE_DIR, "ml", "predict_trust.py")
 
-# ── Concurrency guard ──────────────────────────────────────────────────────
+# ── Concurrency guard & Process Management ──────────────────────────────────
 _sim_lock = threading.Lock()
+
+class ActiveProcessTracker:
+    """
+    Thread-safe tracker for the active NS-3 simulation subprocess owned by this backend.
+    Enables targeted termination on shutdown, timeout, or interruption without
+    affecting unrelated processes on Windows or in WSL.
+    """
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.current_process: Optional[subprocess.Popen] = None
+        self.current_run_id: Optional[str] = None
+        self.current_pid_file_wsl: Optional[str] = None
+
+    def register(self, proc: subprocess.Popen, run_id: str, pid_file_wsl: Optional[str] = None):
+        with self._lock:
+            self.current_process = proc
+            self.current_run_id = run_id
+            self.current_pid_file_wsl = pid_file_wsl
+
+    def unregister(self, run_id: Optional[str] = None):
+        with self._lock:
+            if run_id is None or self.current_run_id == run_id:
+                self.current_process = None
+                self.current_run_id = None
+                self.current_pid_file_wsl = None
+
+    def terminate_active(self, run_id: Optional[str] = None, timeout: float = 3.0) -> bool:
+        with self._lock:
+            proc = self.current_process
+            target_run_id = self.current_run_id
+            pid_file = self.current_pid_file_wsl
+
+        if not proc and not target_run_id:
+            return False
+        if run_id and target_run_id and target_run_id != run_id:
+            return False
+
+        effective_run_id = run_id or target_run_id
+        print(f"[ACTIVE_PROCESS] Terminating managed subprocess for run '{effective_run_id}'...")
+
+        # 1. Targeted WSL cleanup: safe process group termination with identity validation
+        if effective_run_id:
+            try:
+                from app.services.recovery_service import safe_terminate_wsl_simulation
+                res = safe_terminate_wsl_simulation(effective_run_id, timeout=timeout)
+                print(f"[ACTIVE_PROCESS] WSL termination result for '{effective_run_id}': {res}")
+            except Exception as w_err:
+                print(f"[ACTIVE_PROCESS] Warning during WSL process termination: {w_err}")
+
+        # 2. Terminate Windows process handle
+        if proc:
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=timeout)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=2.0)
+            except Exception as p_err:
+                print(f"[ACTIVE_PROCESS] Warning during Windows process termination: {p_err}")
+
+        with self._lock:
+            if self.current_run_id == target_run_id:
+                self.current_process = None
+                self.current_run_id = None
+                self.current_pid_file_wsl = None
+        return True
+
+active_process_tracker = ActiveProcessTracker()
 
 import json
 
@@ -134,7 +204,10 @@ def run_simulation(
     simArea: float = None,
     demoTopology: bool = False,
     sourceNode: int = 0,
-    destNode: int = None
+    destNode: int = None,
+    simulationTime: float = 150.0,
+    packetRate: int = 2,
+    attackType: str = None,
 ) -> dict:
     """
     Execute the NS-3 MANET simulation with *nNodes* nodes (blocking call).
@@ -150,6 +223,13 @@ def run_simulation(
         RuntimeError on NS-3 failure, parser failure, timeout, or file errors.
     """
     global current_simulation
+    from app.services.recovery_service import is_database_owner
+    if not is_database_owner():
+        raise RuntimeError(
+            "Cannot start simulation: this backend instance does not hold database write ownership. "
+            "Another backend instance is active."
+        )
+
     if not _sim_lock.acquire(blocking=False):
         raise RuntimeError(
             "Another simulation is already running. Please wait and try again."
@@ -239,6 +319,53 @@ def run_simulation(
         
         dest_node_val = destNode if destNode is not None else nNodes - 1
         
+        # ── Parameter Validation & NS-3 Parity Enforcement ───────────────────
+        # 1. packetRate: strictly validate positive integer (default=2)
+        if packetRate is None:
+            resolved_packet_rate = 2
+        else:
+            try:
+                resolved_packet_rate = int(packetRate)
+                if resolved_packet_rate <= 0:
+                    raise ValueError(f"packetRate must be a positive integer greater than 0, got {packetRate}")
+            except (ValueError, TypeError) as pe:
+                raise ValueError(f"Invalid packetRate '{packetRate}': must be a positive integer") from pe
+
+        # 2. simulationTime: strictly validate positive float (default=150.0)
+        if simulationTime is None:
+            resolved_simulation_time = 150.0
+        else:
+            try:
+                resolved_simulation_time = float(simulationTime)
+                if resolved_simulation_time <= 0:
+                    raise ValueError(f"simulationTime must be a positive number greater than 0, got {simulationTime}")
+            except (ValueError, TypeError) as se:
+                raise ValueError(f"Invalid simulationTime '{simulationTime}': must be a positive number") from se
+
+        # 3. attackType: strictly enforce genuine NS-3 attack capabilities
+        # NS-3 basic_manet_simulation.cc genuinely implements only 'Black Hole' (AODV IsMalicious packet drop)
+        if attackEnabled and malicious_nodes_list:
+            if attackType is None:
+                resolved_attack_type = "Black Hole"
+            else:
+                norm_at = str(attackType).strip().lower().replace(" ", "").replace("_", "").replace("-", "")
+                if norm_at in ("blackhole",):
+                    resolved_attack_type = "Black Hole"
+                else:
+                    raise ValueError(
+                        f"Unsupported attackType '{attackType}' for NS-3 execution. "
+                        f"Currently implemented and executable attack types: ['Black Hole']."
+                    )
+        else:
+            if attackType is not None:
+                norm_at = str(attackType).strip().lower()
+                if norm_at not in ("none", ""):
+                    raise ValueError(
+                        f"attackType '{attackType}' specified but attackEnabled is False. "
+                        f"Set attackEnabled to True or use attackType 'None'."
+                    )
+            resolved_attack_type = "None"
+
         current_simulation.update({
             "status"           : "running",
             "run_id"           : run_id,
@@ -260,6 +387,13 @@ def run_simulation(
             "attackEnabled"    : attackEnabled,
             "maliciousNodes"   : malicious_nodes_list if attackEnabled else [],
             "classical_ml"     : None,
+            "attack_type"      : resolved_attack_type,
+            "attackType"       : resolved_attack_type,
+            "packet_rate"      : resolved_packet_rate,
+            "packetRate"       : resolved_packet_rate,
+            "simulation_time"  : resolved_simulation_time,
+            "simulationTime"   : resolved_simulation_time,
+            "completed_at"     : None,
         })
 
         # Set malicious node flag (empty = none, otherwise CSV)
@@ -290,7 +424,8 @@ def run_simulation(
                 f"cd '{NS3_DIR_WSL}' && "
                 f"./ns3 run 'scratch/manet-sim "
                 f"--nNodes={nNodes} "
-                f"--simulationTime=150.0 "
+                f"--simulationTime={resolved_simulation_time} "
+                f"--packetRate={resolved_packet_rate} "
                 f"--maliciousNodes=\"{mal}\" "
                 f"--RngSeed={rng_seed} "
                 f"--outputFile={xml_filename} "
@@ -309,12 +444,40 @@ def run_simulation(
             )
 
         def run_ns3(cmd, expected_xml_win_path, is_pass1=False):
-            proc = subprocess.run(
-                ["wsl", "-d", "Ubuntu", "-u", "kumar", "--", "/bin/bash", "-lc", cmd],
-                capture_output=True, text=True, timeout=300
+            meta_file_wsl = f"/tmp/manet_sim_{run_id}.json"
+            pid_file_wsl = f"/tmp/manet_sim_{run_id}.pid"
+            
+            # Atomic metadata initialization inside WSL with PID, PGID, SID, and start_time verification
+            meta_init_code = (
+                'python3 -c "'
+                'import os, sys, json, time; '
+                'meta_file = sys.argv[1]; run_id = sys.argv[2]; shell_pid = int(sys.argv[3]); '
+                'stat = open(f\\"/proc/{shell_pid}/stat\\").read().split(); '
+                'meta = {\\"run_id\\": run_id, \\"pgid\\": int(stat[4]), \\"sid\\": int(stat[5]), \\"leader_pid\\": shell_pid, \\"start_time\\": int(stat[21]), \\"cmdline_pattern\\": \\"scratch/manet-sim\\", \\"created_at\\": time.time()}; '
+                'tmp_file = f\\"{meta_file}.tmp\\"; '
+                'f = open(tmp_file, \\"w\\"); json.dump(meta, f); f.close(); '
+                'os.replace(tmp_file, meta_file)" '
+                f"'{meta_file_wsl}' '{run_id}' '$$'"
             )
+            cmd_with_meta = f"{meta_init_code} && {cmd}; rm -f '{meta_file_wsl}' '{pid_file_wsl}'"
+
+            proc = subprocess.Popen(
+                ["wsl", "-d", "Ubuntu", "-u", "kumar", "--", "/bin/bash", "-lc", cmd_with_meta],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            active_process_tracker.register(proc, run_id, meta_file_wsl)
+            try:
+                stdout, stderr = proc.communicate(timeout=300)
+            except subprocess.TimeoutExpired:
+                active_process_tracker.terminate_active(run_id=run_id)
+                raise subprocess.TimeoutExpired(proc.args, 300, output=None, stderr="NS-3 simulation execution timed out after 300 seconds.")
+            finally:
+                active_process_tracker.unregister(run_id)
+
             if proc.returncode != 0:
-                err = (proc.stderr or proc.stdout or "unknown error").strip()
+                err = (stderr or stdout or "unknown error").strip()
                 raise RuntimeError(f"NS-3 exited with code {proc.returncode}: {err[:500]}")
             if not os.path.exists(expected_xml_win_path):
                 raise RuntimeError("NS-3 finished but did not produce an output XML file.")
@@ -324,7 +487,7 @@ def run_simulation(
                 import re
                 import math
                 nodes_pos = {}
-                for line in proc.stdout.split('\n'):
+                for line in stdout.split('\n'):
                     match = re.search(r'\[TOPOLOGY\] Node (\d+) -> \(([\d\.-]+), ([\d\.-]+),', line)
                     if match:
                         nodes_pos[int(match.group(1))] = (float(match.group(2)), float(match.group(3)))
@@ -347,8 +510,13 @@ def run_simulation(
                 topology_path = os.path.join(DYNAMIC_RESULTS_DIR, f"run_{run_id}_topology.json")
                 with open(topology_path, 'w') as f:
                     json.dump({"nodes_pos": nodes_pos, "edges": edges}, f)
-                    
-            return proc
+
+            class ProcResult:
+                def __init__(self, out, err, code):
+                    self.stdout = out
+                    self.stderr = err
+                    self.returncode = code
+            return ProcResult(stdout, stderr, proc.returncode)
 
         t_start = time.time()
         print(f"[TRUST ROUTING] nNodes = {nNodes}")
@@ -381,6 +549,8 @@ def run_simulation(
             f"cd '{NS3_DIR_WSL}' && "
             f"./ns3 run 'scratch/manet-sim "
             f"--nNodes={nNodes} "
+            f"--simulationTime={resolved_simulation_time} "
+            f"--packetRate={resolved_packet_rate} "
             f"--maliciousNodes=\"\" "
             f"--RngSeed={rng_seed} "
             f"{area_arg}"
@@ -578,6 +748,13 @@ def run_simulation(
             "baseline_energy_csv_path": baseline_energy_path_final,
             "energy_csv_path"  : energy_path_final,
             "duration_seconds" : duration,
+            "attack_type"      : resolved_attack_type,
+            "attackType"       : resolved_attack_type,
+            "packet_rate"      : resolved_packet_rate,
+            "packetRate"       : resolved_packet_rate,
+            "simulation_time"  : resolved_simulation_time,
+            "simulationTime"   : resolved_simulation_time,
+            "completed_at"     : datetime.now(timezone.utc).isoformat(),
         })
 
         # Flush current_simulation to disk so ingestion service can read accurate authoritative metadata
@@ -596,46 +773,96 @@ def run_simulation(
                 ingest_trust_evaluations,
                 ingest_routing_records,
                 ingest_prevention_events,
+                ingest_federated_learning_results,
+                ingest_network_topology,
             )
             # 1. Core simulation data (simulation_runs, metrics, node_energy, artifacts)
-            core_res = ingest_simulation_core(run_id)
-            persistence_results["core"] = core_res
-            print(f"[PERSISTENCE] Core simulation data ingested for {run_id}: {core_res.get('status')}")
+            try:
+                core_res = ingest_simulation_core(run_id)
+                persistence_results["core"] = core_res
+                print(f"[PERSISTENCE] Core simulation data ingested for {run_id}: {core_res.get('status')}")
+            except Exception as c_err:
+                print(f"[PERSISTENCE] Warning: Core ingestion failed: {c_err}")
+                persistence_results["core"] = {"status": "FAILED", "error": str(c_err)}
 
             # 2. Classical ML predictions
             classical_ml_csv = os.path.join(DYNAMIC_RESULTS_DIR, f"run_{run_id}_classical_ml_predictions.csv")
             if os.path.exists(classical_ml_csv):
-                ml_res = ingest_classical_ml_predictions(run_id)
-                persistence_results["ml_predictions"] = ml_res
-                print(f"[PERSISTENCE] Classical ML predictions ingested for {run_id}: {ml_res.get('status')} ({ml_res.get('inserted')} rows)")
+                try:
+                    ml_res = ingest_classical_ml_predictions(run_id)
+                    persistence_results["ml_predictions"] = ml_res
+                    print(f"[PERSISTENCE] Classical ML predictions ingested for {run_id}: {ml_res.get('status')} ({ml_res.get('inserted')} rows)")
+                except Exception as ml_err:
+                    print(f"[PERSISTENCE] Warning: Classical ML predictions ingestion failed: {ml_err}")
+                    persistence_results["ml_predictions"] = {"status": "FAILED", "error": str(ml_err)}
             else:
                 persistence_results["ml_predictions"] = {"status": "SKIPPED_NO_ARTIFACT"}
 
             # 3. Trust evaluations (LSTM predictions)
             lstm_pred_csv = os.path.join(DYNAMIC_RESULTS_DIR, f"run_{run_id}_lstm_pred.csv")
             if os.path.exists(lstm_pred_csv):
-                trust_res = ingest_trust_evaluations(run_id)
-                persistence_results["trust_evaluations"] = trust_res
-                print(f"[PERSISTENCE] Trust evaluations ingested for {run_id}: {trust_res.get('status')} ({trust_res.get('inserted')} rows)")
+                try:
+                    trust_res = ingest_trust_evaluations(run_id)
+                    persistence_results["trust_evaluations"] = trust_res
+                    print(f"[PERSISTENCE] Trust evaluations ingested for {run_id}: {trust_res.get('status')} ({trust_res.get('inserted')} rows)")
+                except Exception as t_err:
+                    print(f"[PERSISTENCE] Warning: Trust evaluations ingestion failed: {t_err}")
+                    persistence_results["trust_evaluations"] = {"status": "FAILED", "error": str(t_err)}
             else:
                 persistence_results["trust_evaluations"] = {"status": "SKIPPED_NO_ARTIFACT"}
 
             # 4. Routing records
             routing_json_path = os.path.join(DYNAMIC_RESULTS_DIR, f"run_{run_id}_routing.json")
             if os.path.exists(routing_json_path):
-                route_res = ingest_routing_records(run_id)
-                persistence_results["routing_records"] = route_res
-                print(f"[PERSISTENCE] Routing records ingested for {run_id}: {route_res.get('status')} ({route_res.get('inserted')} rows)")
+                try:
+                    route_res = ingest_routing_records(run_id)
+                    persistence_results["routing_records"] = route_res
+                    print(f"[PERSISTENCE] Routing records ingested for {run_id}: {route_res.get('status')} ({route_res.get('inserted')} rows)")
+                except Exception as r_err:
+                    print(f"[PERSISTENCE] Warning: Routing records ingestion failed: {r_err}")
+                    persistence_results["routing_records"] = {"status": "FAILED", "error": str(r_err)}
             else:
                 persistence_results["routing_records"] = {"status": "SKIPPED_NO_ARTIFACT"}
 
             # 5. Prevention events (authentic NS-3 drops)
-            pe_res = ingest_prevention_events(run_id)
-            persistence_results["prevention_events"] = pe_res
-            print(f"[PERSISTENCE] Prevention events ingested for {run_id}: {pe_res.get('status')} ({pe_res.get('inserted')} rows)")
+            try:
+                pe_res = ingest_prevention_events(run_id)
+                persistence_results["prevention_events"] = pe_res
+                print(f"[PERSISTENCE] Prevention events ingested for {run_id}: {pe_res.get('status')} ({pe_res.get('inserted')} rows)")
+            except Exception as pe_err:
+                print(f"[PERSISTENCE] Warning: Prevention events ingestion failed: {pe_err}")
+                persistence_results["prevention_events"] = {"status": "FAILED", "error": str(pe_err)}
+
+            # 6. Federated Learning results
+            fl_metrics_json = os.path.join(DYNAMIC_RESULTS_DIR, run_id, "fl", "fl_metrics.json")
+            if not os.path.exists(fl_metrics_json):
+                fl_metrics_json = os.path.join(DYNAMIC_RESULTS_DIR, "fl", "fl_metrics.json")
+            if os.path.exists(fl_metrics_json):
+                try:
+                    fl_res = ingest_federated_learning_results(run_id)
+                    persistence_results["federated_learning"] = fl_res
+                    print(f"[PERSISTENCE] Federated Learning results ingested for {run_id}: {fl_res.get('status')} ({fl_res.get('inserted_rounds')} rounds, {fl_res.get('inserted_clients')} clients)")
+                except Exception as fl_err:
+                    print(f"[PERSISTENCE] Warning: Federated Learning ingestion failed: {fl_err}")
+                    persistence_results["federated_learning"] = {"status": "FAILED", "error": str(fl_err)}
+            else:
+                persistence_results["federated_learning"] = {"status": "SKIPPED_NO_ARTIFACT"}
+
+            # 7. Network Topology (node coordinates and connectivity edges)
+            topo_json_path = os.path.join(DYNAMIC_RESULTS_DIR, f"run_{run_id}_topology.json")
+            if os.path.exists(topo_json_path):
+                try:
+                    topo_res = ingest_network_topology(run_id)
+                    persistence_results["topology"] = topo_res
+                    print(f"[PERSISTENCE] Network topology ingested for {run_id}: {topo_res.get('status')} ({topo_res.get('inserted_nodes')} nodes, {topo_res.get('inserted_edges')} edges)")
+                except Exception as tp_err:
+                    print(f"[PERSISTENCE] Warning: Network topology ingestion failed: {tp_err}")
+                    persistence_results["topology"] = {"status": "FAILED", "error": str(tp_err)}
+            else:
+                persistence_results["topology"] = {"status": "SKIPPED_NO_ARTIFACT"}
 
         except Exception as p_err:
-            print(f"[PERSISTENCE] Warning: Automatic database ingestion failed: {p_err}")
+            print(f"[PERSISTENCE] Warning: Automatic database ingestion initialization failed: {p_err}")
             persistence_results["error"] = str(p_err)
 
         # 6. Automatic safe WAL checkpoint attempt after all ingestion transactions are committed

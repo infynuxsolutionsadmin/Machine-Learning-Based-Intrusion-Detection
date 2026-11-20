@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { 
   fetchHealth, fetchSimulationStatus, fetchPreventionSummary, 
-  fetchMetricsComparison, fetchDynamicTrust, fetchRoutingPath 
+  fetchMetricsComparison, fetchDynamicTrust, fetchRoutingPath,
+  fetchSimulationSummary
 } from '../services/apiService';
+import { useRun } from '../context/RunContext';
 import { 
   Activity, ShieldAlert, Network, Cpu, Route, 
   BarChart3, AlertCircle, ShieldCheck, Zap
 } from 'lucide-react';
 
 const Dashboard = () => {
+  const { selectedRunId } = useRun();
   const [health, setHealth] = useState(null);
   const [simStatus, setSimStatus] = useState(null);
+  const [simSummary, setSimSummary] = useState(null);
   const [preventionSummary, setPreventionSummary] = useState(null);
   const [metricsComp, setMetricsComp] = useState(null);
   const [dynamicTrust, setDynamicTrust] = useState(null);
@@ -19,35 +23,71 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
 
-  const loadData = async () => {
-    try {
-      const [healthRes, simRes, prevRes, metRes, trustRes, routeRes] = await Promise.allSettled([
-        fetchHealth(),
-        fetchSimulationStatus(),
-        fetchPreventionSummary(),
-        fetchMetricsComparison(),
-        fetchDynamicTrust(),
-        fetchRoutingPath()
-      ]);
-      if (healthRes.status === 'fulfilled') setHealth(healthRes.value);
-      if (simRes.status === 'fulfilled') setSimStatus(simRes.value);
-      if (prevRes.status === 'fulfilled') setPreventionSummary(prevRes.value);
-      if (metRes.status === 'fulfilled') setMetricsComp(metRes.value);
-      if (trustRes.status === 'fulfilled') setDynamicTrust(trustRes.value);
-      if (routeRes.status === 'fulfilled') setRoutingPath(routeRes.value);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setRunning(false);
-    }
-  };
-
   useEffect(() => {
+    let isCurrent = true;
+    setLoading(true);
+    setSimSummary(null);
+
+    const loadData = async () => {
+      try {
+        const promises = [
+          fetchHealth(),
+          fetchSimulationStatus(),
+          fetchPreventionSummary(selectedRunId),
+          fetchMetricsComparison(selectedRunId),
+          fetchDynamicTrust(selectedRunId),
+          fetchRoutingPath(selectedRunId),
+        ];
+
+        if (selectedRunId) {
+          promises.push(fetchSimulationSummary(selectedRunId));
+        }
+
+        const results = await Promise.allSettled(promises);
+        if (!isCurrent) return;
+
+        const [healthRes, simRes, prevRes, metRes, trustRes, routeRes, summaryRes] = results;
+
+        if (healthRes.status === 'fulfilled') setHealth(healthRes.value);
+        if (simRes.status === 'fulfilled') setSimStatus(simRes.value);
+        if (prevRes.status === 'fulfilled') setPreventionSummary(prevRes.value);
+        if (metRes.status === 'fulfilled') setMetricsComp(metRes.value);
+        if (trustRes.status === 'fulfilled') setDynamicTrust(trustRes.value);
+        if (routeRes.status === 'fulfilled') setRoutingPath(routeRes.value);
+
+        if (selectedRunId) {
+          if (summaryRes && summaryRes.status === 'fulfilled' && summaryRes.value) {
+            setSimSummary({ ...summaryRes.value, run_id: summaryRes.value.run_id || selectedRunId });
+          } else {
+            setSimSummary(null);
+          }
+        } else {
+          setSimSummary(null);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (isCurrent) {
+          setLoading(false);
+          setRunning(false);
+        }
+      }
+    };
+
     loadData();
-    window.addEventListener('simulation-completed', loadData);
-    return () => window.removeEventListener('simulation-completed', loadData);
-  }, []);
+
+    const handleSimulationCompleted = () => {
+      if (!selectedRunId) {
+        loadData();
+      }
+    };
+
+    window.addEventListener('simulation-completed', handleSimulationCompleted);
+    return () => {
+      isCurrent = false;
+      window.removeEventListener('simulation-completed', handleSimulationCompleted);
+    };
+  }, [selectedRunId]);
 
   if (loading) {
     return (
@@ -65,12 +105,26 @@ const Dashboard = () => {
     window.location.href = '/simulation';
   };
 
-  const totalNodes = simStatus?.nNodes ?? 'N/A';
-  const maliciousNodes = simStatus?.maliciousNodes || [];
-  const safeNodes = typeof totalNodes === 'number' ? totalNodes - maliciousNodes.length : 'N/A';
-  const datasetRows = simStatus?.classical_ml?.dataset_rows ?? 'N/A';
-  const sourceNode = simStatus?.sourceNode ?? 'N/A';
-  const destNode = simStatus?.destinationNode ?? 'N/A';
+  const activeSummary = (selectedRunId && simSummary?.run_id === selectedRunId)
+    ? simSummary
+    : null;
+
+  const totalNodes = selectedRunId
+    ? (activeSummary?.num_nodes ?? 'N/A')
+    : (simStatus?.nNodes ?? 'N/A');
+  const maliciousNodes = selectedRunId
+    ? (activeSummary?.maliciousNodes ?? [])
+    : (simStatus?.maliciousNodes || []);
+  const safeNodes = typeof totalNodes === 'number' ? Math.max(0, totalNodes - maliciousNodes.length) : 'N/A';
+  const datasetRows = selectedRunId
+    ? (activeSummary?.dataset_rows ?? 'N/A')
+    : (simStatus?.classical_ml?.dataset_rows ?? 'N/A');
+  const sourceNode = selectedRunId
+    ? (activeSummary?.sourceNode ?? 'N/A')
+    : (simStatus?.sourceNode ?? 'N/A');
+  const destNode = selectedRunId
+    ? (activeSummary?.destinationNode ?? 'N/A')
+    : (simStatus?.destinationNode ?? 'N/A');
   
   const detectedMalicious = [...new Set(preventionSummary?.detected_low_trust_nodes || [])];
   const forbiddenNodes = [...new Set(preventionSummary?.blocked_or_restricted_nodes || [])];
@@ -221,7 +275,7 @@ const Dashboard = () => {
                 <p className="text-xs text-slate-400 font-medium">Track your network distribution</p>
               </div>
               <div className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">
-                Live State
+                {selectedRunId ? `Run ${selectedRunId}` : 'Live State'}
               </div>
             </div>
 
@@ -342,8 +396,8 @@ const Dashboard = () => {
             <div className="space-y-3.5 mb-6">
               <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
                 <span className="text-slate-500 font-medium">Run ID</span>
-                <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg max-w-[200px] truncate" title={simStatus?.run_id}>
-                  {simStatus?.run_id || 'N/A'}
+                <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg max-w-[200px] truncate" title={selectedRunId || simStatus?.run_id}>
+                  {selectedRunId ? `${selectedRunId} (Historical)` : (simStatus?.run_id || 'N/A')}
                 </span>
               </div>
               <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">

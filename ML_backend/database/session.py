@@ -148,6 +148,19 @@ def get_db() -> Generator[Session, None, None]:
 
 
 @contextmanager
+def get_read_session() -> Generator[Session, None, None]:
+    """
+    Context manager for database read operations.
+    Operates without the global write lock and guarantees session disposal.
+    """
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@contextmanager
 def get_write_session() -> Generator[Session, None, None]:
     """
     Context manager for database write operations.

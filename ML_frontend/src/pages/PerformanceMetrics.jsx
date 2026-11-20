@@ -1,24 +1,53 @@
 import React, { useState, useEffect } from 'react';
 import { fetchMetricsComparison } from '../services/apiService';
+import { useRun } from '../context/RunContext';
 import { Activity, AlertCircle, TrendingUp, TrendingDown, Minus, Info, Zap, ShieldCheck } from 'lucide-react';
 
 const PerformanceMetrics = () => {
+  const { selectedRunId } = useRun();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadData = () => {
-    fetchMetricsComparison()
-      .then(setSummary)
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  };
-
   useEffect(() => {
+    let isCurrent = true;
+    setLoading(true);
+    setError(null);
+
+    const loadData = () => {
+      fetchMetricsComparison(selectedRunId)
+        .then(data => {
+          if (isCurrent) {
+            setSummary(data);
+            setError(null);
+          }
+        })
+        .catch(err => {
+          if (isCurrent) {
+            setError(err.message);
+          }
+        })
+        .finally(() => {
+          if (isCurrent) {
+            setLoading(false);
+          }
+        });
+    };
+
     loadData();
-    window.addEventListener('simulation-completed', loadData);
-    return () => window.removeEventListener('simulation-completed', loadData);
-  }, []);
+
+    const handleSimulationCompleted = () => {
+      if (!selectedRunId) {
+        loadData();
+      }
+    };
+
+    window.addEventListener('simulation-completed', handleSimulationCompleted);
+    return () => {
+      isCurrent = false;
+      window.removeEventListener('simulation-completed', handleSimulationCompleted);
+    };
+  }, [selectedRunId]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">

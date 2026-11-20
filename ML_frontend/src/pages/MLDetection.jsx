@@ -1,53 +1,128 @@
 import React, { useState, useEffect } from 'react';
 import { 
   fetchMLFeatures, fetchMLModels, fetchMLMetrics, 
-  fetchDynamicTrust, fetchSimulationStatus, fetchPreventionSummary 
+  fetchDynamicTrust, fetchSimulationStatus, fetchPreventionSummary,
+  fetchSimulationSummary
 } from '../services/apiService';
+import { useRun } from '../context/RunContext';
 import { 
   Activity, AlertTriangle, CheckCircle, 
   ShieldAlert, Database, Target, Award, BarChart2
 } from 'lucide-react';
 
 const MLDetection = () => {
+  const { selectedRunId } = useRun();
+
   const [features, setFeatures] = useState(null);
   const [models, setModels] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [trust, setTrust] = useState(null);
   const [simStatus, setSimStatus] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [simSummary, setSimSummary] = useState(null);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadData = () => {
+  const [trustLoading, setTrustLoading] = useState(false);
+  const [trustError, setTrustError] = useState(null);
+
+  // 1. Initial Mount: Load global offline ML benchmark models & active simulation status
+  useEffect(() => {
+    let isCurrent = true;
     Promise.allSettled([
       fetchMLFeatures(),
       fetchMLModels(),
       fetchMLMetrics(),
-      fetchDynamicTrust(),
-      fetchSimulationStatus(),
-      fetchPreventionSummary()
-    ]).then(([featRes, modRes, metRes, trustRes, simRes, sumRes]) => {
+      fetchSimulationStatus()
+    ]).then(([featRes, modRes, metRes, simRes]) => {
+      if (!isCurrent) return;
       let anyError = false;
       if (featRes.status === 'fulfilled') setFeatures(featRes.value); else anyError = true;
       if (modRes.status === 'fulfilled') setModels(modRes.value); else anyError = true;
       if (metRes.status === 'fulfilled') setMetrics(metRes.value); else anyError = true;
-      if (trustRes.status === 'fulfilled') setTrust(trustRes.value); else anyError = true;
       if (simRes.status === 'fulfilled') setSimStatus(simRes.value); else anyError = true;
-      if (sumRes.status === 'fulfilled') setSummary(sumRes.value); else anyError = true;
 
       if (anyError && !featRes.value && !modRes.value && !metRes.value) {
-        setError("Unable to load data from backend.");
+        setError("Unable to load ML benchmark models.");
       }
       setLoading(false);
     });
-  };
 
-  useEffect(() => {
-    loadData();
-    window.addEventListener('simulation-completed', loadData);
-    return () => window.removeEventListener('simulation-completed', loadData);
+    return () => {
+      isCurrent = false;
+    };
   }, []);
+
+  // 2. Run-specific data: Load dynamic trust & run summaries whenever selectedRunId changes
+  useEffect(() => {
+    let isCurrent = true;
+    setTrustLoading(true);
+    setTrustError(null);
+
+    const promises = [
+      fetchDynamicTrust(selectedRunId),
+      fetchPreventionSummary(selectedRunId)
+    ];
+
+    if (selectedRunId) {
+      promises.push(fetchSimulationSummary(selectedRunId));
+    } else {
+      promises.push(fetchSimulationStatus());
+    }
+
+    Promise.allSettled(promises).then(([trustRes, sumRes, extraRes]) => {
+      if (!isCurrent) return;
+
+      if (trustRes.status === 'fulfilled') {
+        setTrust(trustRes.value);
+      } else {
+        setTrust(null);
+        setTrustError(trustRes.reason?.message || "Failed to load trust evaluation data");
+      }
+
+      if (sumRes.status === 'fulfilled') {
+        setSummary(sumRes.value);
+      } else {
+        setSummary(null);
+      }
+
+      if (selectedRunId) {
+        if (extraRes && extraRes.status === 'fulfilled') {
+          setSimSummary(extraRes.value);
+        } else {
+          setSimSummary(null);
+        }
+      } else {
+        if (extraRes && extraRes.status === 'fulfilled') {
+          setSimStatus(extraRes.value);
+        }
+        setSimSummary(null);
+      }
+
+      setTrustLoading(false);
+    });
+
+    const handleSimulationCompleted = () => {
+      if (!selectedRunId) {
+        fetchSimulationStatus().then(st => {
+          if (isCurrent && st) setSimStatus(st);
+        }).catch(() => {});
+        fetchDynamicTrust().then(tr => {
+          if (isCurrent && tr) setTrust(tr);
+        }).catch(() => {});
+        fetchPreventionSummary().then(pr => {
+          if (isCurrent && pr) setSummary(pr);
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('simulation-completed', handleSimulationCompleted);
+    return () => {
+      isCurrent = false;
+      window.removeEventListener('simulation-completed', handleSimulationCompleted);
+    };
+  }, [selectedRunId]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
@@ -64,13 +139,34 @@ const MLDetection = () => {
   );
 
   const rfMetrics = metrics?.metrics?.RandomForest || null;
-  const isSimulationCompleted = simStatus?.status === 'completed';
-  const hasTrustData = trust?.nodes && trust.nodes.length > 0;
+  const isSimulationCompleted = Boolean(selectedRunId) || simStatus?.status === 'completed';
+  const hasTrustData = Boolean(trust?.nodes && trust.nodes.length > 0);
   
-  const maliciousNodes = simStatus?.maliciousNodes || [];
-  const nNodes = simStatus?.nNodes || 0;
-  const safeNodesCount = isSimulationCompleted ? Math.max(0, nNodes - maliciousNodes.length) : 'N/A';
+  const maliciousNodes = selectedRunId
+    ? (simSummary?.maliciousNodes || summary?.detected_low_trust_nodes || summary?.prevented_nodes || (trust?.nodes ? trust.nodes.filter(n => n.predicted_malicious === true || n.predicted_malicious === 1 || n.is_malicious === 1).map(n => n.node) : []))
+    : (simStatus?.maliciousNodes || []);
+
+  const nNodes = selectedRunId 
+    ? (simSummary?.num_nodes || (trust?.nodes ? trust.nodes.length : 0))
+    : (simStatus?.nNodes || 0);
+
+  const safeNodesCount = isSimulationCompleted 
+    ? Math.max(0, nNodes - maliciousNodes.length) 
+    : 'N/A';
+
   const predictionCount = hasTrustData ? trust.nodes.length : 'N/A';
+
+  const sourceNode = selectedRunId 
+    ? (simSummary?.sourceNode ?? 'N/A') 
+    : (simStatus?.sourceNode ?? 'N/A');
+
+  const destinationNode = selectedRunId 
+    ? (simSummary?.destinationNode ?? 'N/A') 
+    : (simStatus?.destinationNode ?? 'N/A');
+
+  const datasetRows = selectedRunId
+    ? (simSummary?.dataset_rows ?? (hasTrustData ? `${trust.nodes.length} nodes` : 'N/A'))
+    : (simStatus?.classical_ml?.dataset_rows ?? 'N/A');
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10 animate-in fade-in duration-300">
@@ -246,10 +342,23 @@ const MLDetection = () => {
               </span>
             </div>
             
-            {!isSimulationCompleted ? (
+            {trustLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <div className="w-7 h-7 rounded-full border-2 border-indigo-600/20 border-t-indigo-600 animate-spin"></div>
+                <p className="text-xs text-slate-500 font-medium">Loading trust evaluation...</p>
+              </div>
+            ) : trustError ? (
+              <div className="py-6 px-4 rounded-2xl bg-rose-50 border border-rose-100 text-center">
+                <p className="text-xs font-semibold text-rose-700">{trustError}</p>
+              </div>
+            ) : !isSimulationCompleted && !selectedRunId ? (
               <p className="text-slate-400 italic text-sm py-6 text-center">No completed simulation available.</p>
             ) : !hasTrustData ? (
-              <p className="text-slate-400 italic text-sm py-6 text-center">LSTM Trust Evaluation data unavailable for this run.</p>
+              <p className="text-slate-400 italic text-sm py-6 text-center">
+                {selectedRunId 
+                  ? `No LSTM trust evaluation records found for run "${selectedRunId}".` 
+                  : "LSTM Trust Evaluation data unavailable for this run."}
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -302,20 +411,29 @@ const MLDetection = () => {
         {/* Right: Detection Summary */}
         <div className="dash-card p-6 rounded-3xl flex flex-col justify-between self-start">
           <div>
-            <div className="flex items-center gap-2.5 mb-5 pb-3 border-b border-slate-100">
-              <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
-                <Database className="w-5 h-5" />
+            <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900">Detection Summary</h3>
+                  <p className="text-xs text-slate-400">
+                    {selectedRunId ? `Run ${selectedRunId} telemetry & predictions` : 'Current run telemetry & predictions'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-extrabold text-slate-900">Detection Summary</h3>
-                <p className="text-xs text-slate-400">Current run telemetry & predictions</p>
-              </div>
+              {selectedRunId && (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                  {selectedRunId}
+                </span>
+              )}
             </div>
             
             <div className="space-y-3.5">
               <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
                 <span className="font-medium text-slate-500">Dataset Rows</span>
-                <span className="font-bold text-slate-900">{simStatus?.classical_ml?.dataset_rows ?? 'N/A'}</span>
+                <span className="font-bold text-slate-900">{datasetRows}</span>
               </div>
               <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
                 <span className="font-medium text-slate-500">Prediction Count</span>
@@ -327,11 +445,11 @@ const MLDetection = () => {
               </div>
               <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
                 <span className="font-medium text-slate-500">Source Node</span>
-                <span className="font-bold text-slate-900">{simStatus?.sourceNode ?? 'N/A'}</span>
+                <span className="font-bold text-slate-900">{sourceNode}</span>
               </div>
               <div className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
                 <span className="font-medium text-slate-500">Destination Node</span>
-                <span className="font-bold text-slate-900">{simStatus?.destinationNode ?? 'N/A'}</span>
+                <span className="font-bold text-slate-900">{destinationNode}</span>
               </div>
             </div>
 

@@ -1,0 +1,487 @@
+{
+  "run_id": "20261119_143107_48daaf8e_8nodes_attack2_5",
+  "protocol": "AODV",
+  "total_events": 48,
+  "events": [
+    {
+      "sequence": 1,
+      "time_sec": 0.00,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "SUCCESS",
+      "trigger_source": "STATIC_EXCLUSION",
+      "details": "Interface 1 set down. Post-check verified !ipv4->IsUp(1).",
+      "error_message": null
+    },
+    {
+      "sequence": 2,
+      "time_sec": 0.00,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "STATIC_EXCLUSION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 3,
+      "time_sec": 0.00,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "SUCCESS",
+      "trigger_source": "STATIC_EXCLUSION",
+      "details": "Interface 1 set down. Post-check verified !ipv4->IsUp(1).",
+      "error_message": null
+    },
+    {
+      "sequence": 4,
+      "time_sec": 0.00,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "STATIC_EXCLUSION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 5,
+      "time_sec": 6.10,
+      "node_id": 1,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "SUCCESS",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Interface 1 set down. Post-check verified !ipv4->IsUp(1).",
+      "error_message": null
+    },
+    {
+      "sequence": 6,
+      "time_sec": 6.10,
+      "node_id": 1,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 7,
+      "time_sec": 8.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 8,
+      "time_sec": 8.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 9,
+      "time_sec": 9.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 10,
+      "time_sec": 9.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 11,
+      "time_sec": 9.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 12,
+      "time_sec": 9.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 13,
+      "time_sec": 10.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 14,
+      "time_sec": 10.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 15,
+      "time_sec": 10.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 16,
+      "time_sec": 10.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 17,
+      "time_sec": 11.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 18,
+      "time_sec": 11.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 19,
+      "time_sec": 11.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 20,
+      "time_sec": 11.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 21,
+      "time_sec": 12.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 22,
+      "time_sec": 12.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 23,
+      "time_sec": 12.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 24,
+      "time_sec": 12.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 25,
+      "time_sec": 13.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 26,
+      "time_sec": 13.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 27,
+      "time_sec": 13.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 28,
+      "time_sec": 13.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 29,
+      "time_sec": 14.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 30,
+      "time_sec": 14.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 31,
+      "time_sec": 14.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 32,
+      "time_sec": 14.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 33,
+      "time_sec": 15.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 34,
+      "time_sec": 15.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 35,
+      "time_sec": 15.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 36,
+      "time_sec": 15.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 37,
+      "time_sec": 16.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 38,
+      "time_sec": 16.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 39,
+      "time_sec": 16.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 40,
+      "time_sec": 16.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 41,
+      "time_sec": 17.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 42,
+      "time_sec": 17.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 43,
+      "time_sec": 17.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 44,
+      "time_sec": 17.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 45,
+      "time_sec": 18.10,
+      "node_id": 2,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 46,
+      "time_sec": 18.10,
+      "node_id": 2,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    },
+    {
+      "sequence": 47,
+      "time_sec": 18.10,
+      "node_id": 5,
+      "action_type": "INTERFACE_DOWN",
+      "execution_status": "DUPLICATE_IGNORED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "Node interface is already DOWN. Safely ignoring duplicate isolation request.",
+      "error_message": null
+    },
+    {
+      "sequence": 48,
+      "time_sec": 18.10,
+      "node_id": 5,
+      "action_type": "AODV_BLACKLIST",
+      "execution_status": "UNVERIFIED",
+      "trigger_source": "LSTM_PREDICTION",
+      "details": "BlacklistNode dispatched to AODV protocol kernel.",
+      "error_message": null
+    }
+  ]
+}

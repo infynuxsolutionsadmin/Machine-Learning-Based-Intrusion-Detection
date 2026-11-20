@@ -287,3 +287,173 @@ def get_dynamic_trust_analysis(
         "lstm_reason":      lstm_reason,
         "trace_available":  trace_available,
     }
+
+
+def get_dynamic_trust_from_db(run_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Retrieve dynamic LSTM trust evaluations from the SQLite database.
+    Reconstructs exact DynamicTrustResponse contract with per-node scores and sequential evaluations.
+    Enforces strict temporary disk fallback only when ingestion is uncommitted.
+    """
+    from app.services.simulation_runner import current_simulation
+    from database import get_read_session, SimulationRun, TrustEvaluation
+
+    target_run_id = run_id or current_simulation.get("run_id")
+
+    # If no simulation has run yet or is still idle
+    if not target_run_id or (current_simulation.get("status") not in ("completed",) and not run_id):
+        return {
+            "status": current_simulation.get("status", "idle"),
+            "run_config": {
+                "nNodes": current_simulation.get("nNodes", 8),
+                "attackEnabled": current_simulation.get("attackEnabled", False),
+                "maliciousNodes": current_simulation.get("maliciousNodes", []),
+            },
+            "nodes": [],
+            "lstm_predictions": [],
+            "lstm_status": "unavailable",
+            "lstm_reason": "No completed simulation run available yet.",
+            "trace_available": False,
+        }
+
+    with get_read_session() as session:
+        run = session.query(SimulationRun).filter_by(run_id=target_run_id).first()
+        if run:
+            evals = (
+                session.query(TrustEvaluation)
+                .filter_by(simulation_run_id=run.id)
+                .order_by(TrustEvaluation.time_sec.asc(), TrustEvaluation.node_id.asc())
+                .all()
+            )
+
+            malicious_nodes = json.loads(run.ground_truth_malicious) if run.ground_truth_malicious else []
+            attack_enabled = run.num_malicious > 0
+
+            # Base node structure
+            nodes = []
+            for i in range(run.num_nodes):
+                role = "Source" if i == 0 else "Destination" if i == run.num_nodes - 1 else "Relay"
+                is_attacker = attack_enabled and (i in malicious_nodes)
+                nodes.append({
+                    "node": i,
+                    "role": role,
+                    "trust_score": 0.0 if is_attacker else 1.0,
+                    "malicious": is_attacker,
+                    "rx": None,
+                    "fw": None,
+                    "drop": None,
+                })
+
+            if not evals:
+                return {
+                    "status": "completed",
+                    "run_config": {
+                        "nNodes": run.num_nodes,
+                        "attackEnabled": attack_enabled,
+                        "maliciousNodes": malicious_nodes,
+                    },
+                    "nodes": nodes,
+                    "lstm_predictions": [],
+                    "lstm_status": "unavailable",
+                    "lstm_reason": "No LSTM trust evaluation records found in database for this run.",
+                    "trace_available": False,
+                }
+
+            # Map database records to lstm_predictions
+            lstm_predictions = [
+                {
+                    "time": ev.time_sec,
+                    "node": ev.node_id,
+                    "predicted_trust_score": ev.trust_score,
+                    "predicted_malicious": ev.is_malicious,
+                    "ground_truth_malicious": 1 if (attack_enabled and ev.node_id in malicious_nodes) else 0,
+                    "trust_threshold": ev.threshold,
+                    "prediction": "Malicious" if ev.is_malicious == 1 else "Trusted",
+                    "action": ev.inferred_action,
+                }
+                for ev in evals
+            ]
+
+            # Aggregate per-node predicted metrics
+            agg_preds = {}
+            for p in lstm_predictions:
+                nid = p["node"]
+                if nid not in agg_preds:
+                    agg_preds[nid] = {
+                        "score": p["predicted_trust_score"],
+                        "is_malicious": p["predicted_malicious"],
+                    }
+                else:
+                    if p["predicted_trust_score"] < agg_preds[nid]["score"]:
+                        agg_preds[nid]["score"] = p["predicted_trust_score"]
+                    if p["predicted_malicious"] == 1:
+                        agg_preds[nid]["is_malicious"] = 1
+
+            # Enrich with packet counts from authentic trace CSV if present on disk
+            trace_path = os.path.join(
+                BASE_DIR, "simulation", "results", "dynamic", f"run_{target_run_id}_trace.csv"
+            )
+            trace_available = os.path.exists(trace_path)
+            if trace_available:
+                try:
+                    with open(trace_path, mode="r", encoding="utf-8") as tf:
+                        reader = csv.DictReader(tf)
+                        latest_by_node = {}
+                        for row in reader:
+                            latest_by_node[int(row["node"])] = {
+                                "rx": int(float(row["rx"])),
+                                "fw": int(float(row["fw"])),
+                                "drop": int(float(row["drop"])),
+                            }
+                        for n in nodes:
+                            if n["node"] in latest_by_node:
+                                d = latest_by_node[n["node"]]
+                                n["rx"] = d["rx"]
+                                n["fw"] = d["fw"]
+                                n["drop"] = d["drop"]
+                except Exception:
+                    pass
+
+            for n in nodes:
+                nid = n["node"]
+                if nid in agg_preds:
+                    p = agg_preds[nid]
+                    n["predicted_trust_score"] = p["score"]
+                    n["predicted_malicious"] = (p["is_malicious"] == 1)
+                    n["trust_threshold"] = 0.5
+                    n["ground_truth_malicious"] = (attack_enabled and nid in malicious_nodes)
+                    if p["is_malicious"] == 1:
+                        n["trust_score"] = 0.0
+
+            return {
+                "status": "completed",
+                "run_config": {
+                    "nNodes": run.num_nodes,
+                    "attackEnabled": attack_enabled,
+                    "maliciousNodes": malicious_nodes,
+                },
+                "nodes": nodes,
+                "lstm_predictions": lstm_predictions,
+                "lstm_status": "completed",
+                "lstm_reason": None,
+                "trace_available": trace_available,
+            }
+
+    # Temporary disk fallback if ingestion incomplete
+    if (
+        target_run_id == current_simulation.get("run_id")
+        and current_simulation.get("trace_csv_path")
+        and os.path.exists(current_simulation["trace_csv_path"])
+        and current_simulation.get("persistence", {}).get("trust_evaluations", {}).get("status") not in ("SUCCESS", "ALREADY_INGESTED")
+    ):
+        result = get_dynamic_trust_analysis(
+            nNodes=current_simulation["nNodes"],
+            attackEnabled=current_simulation.get("attackEnabled", False),
+            maliciousNodes=current_simulation.get("maliciousNodes", []),
+            trace_csv_path=current_simulation.get("trace_csv_path"),
+        )
+        result["status"] = "completed"
+        return result
+
+    raise KeyError(f"Simulation run '{target_run_id}' not found in database.")
+

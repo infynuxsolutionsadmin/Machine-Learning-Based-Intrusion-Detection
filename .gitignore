@@ -1,0 +1,39 @@
+# Virtual environments
+venv/
+.venv/
+*/venv/
+*/.venv/
+
+# Python cache & test artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.pytest_cache/
+catboost_info/
+
+# Node / Frontend build & packages
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Scratch & temporary backup files
+ML_backend/scratch/
+*.bak
+*.bak_*
+*.phase*bak*
+*.backup*
+*.owner.json
+*.owner.lock
+
+# SQLite temporary journal files
+*.db-shm
+*.db-wal
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

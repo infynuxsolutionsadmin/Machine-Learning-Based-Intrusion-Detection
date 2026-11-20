@@ -4,8 +4,12 @@ database package - SQLAlchemy SQLite persistence layer for MANET Backend.
 from .base import Base
 from .models import (
     ArtifactIngestionLedger,
+    FederatedLearningClient,
+    FederatedLearningRound,
     MLPrediction,
     ModelRegistry,
+    NetworkEdge,
+    NetworkNodeCoordinate,
     NodeEnergyMetric,
     PreventionEvent,
     RoutingRecord,
@@ -21,6 +25,7 @@ from .session import (
     db_write_lock,
     engine,
     get_db,
+    get_read_session,
     get_sqlite_url,
     get_write_session,
     init_db,
@@ -28,11 +33,14 @@ from .session import (
 )
 
 from .ingestion_service import (
+    backfill_simulation_run_metadata,
     compute_file_sha256,
     extract_run_metadata,
     get_simulation_artifact_catalog,
     ingest_classical_ml_predictions,
+    ingest_federated_learning_results,
     ingest_model_registry,
+    ingest_network_topology,
     ingest_prevention_events,
     ingest_routing_records,
     ingest_simulation_core,
@@ -48,6 +56,7 @@ __all__ = [
     "engine",
     "SessionLocal",
     "get_db",
+    "get_read_session",
     "get_write_session",
     "init_db",
     "safe_wal_checkpoint",
@@ -65,6 +74,10 @@ __all__ = [
     "PreventionEvent",
     "ArtifactIngestionLedger",
     "SimulationArtifact",
+    "FederatedLearningRound",
+    "FederatedLearningClient",
+    "NetworkNodeCoordinate",
+    "NetworkEdge",
     "extract_run_metadata",
     "parse_flow_metrics",
     "parse_energy_metrics",
@@ -77,7 +90,10 @@ __all__ = [
     "ingest_trust_evaluations",
     "ingest_routing_records",
     "ingest_prevention_events",
+    "ingest_federated_learning_results",
+    "ingest_network_topology",
     "resolve_run_started_at",
+    "backfill_simulation_run_metadata",
 ]
 
 

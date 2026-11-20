@@ -88,6 +88,15 @@ class SimulationRun(Base):
     artifacts: Mapped[List["SimulationArtifact"]] = relationship(
         "SimulationArtifact", back_populates="simulation_run", cascade="all, delete-orphan"
     )
+    fl_rounds: Mapped[List["FederatedLearningRound"]] = relationship(
+        "FederatedLearningRound", back_populates="simulation_run"
+    )
+    node_coordinates: Mapped[List["NetworkNodeCoordinate"]] = relationship(
+        "NetworkNodeCoordinate", back_populates="simulation_run", cascade="all, delete-orphan", order_by="NetworkNodeCoordinate.node_id"
+    )
+    network_edges: Mapped[List["NetworkEdge"]] = relationship(
+        "NetworkEdge", back_populates="simulation_run", cascade="all, delete-orphan", order_by="NetworkEdge.source_node"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -376,4 +385,110 @@ class SimulationArtifact(Base):
     __table_args__ = (
         UniqueConstraint("simulation_run_id", "file_type", name="uq_simulation_artifacts_entry"),
     )
+
+
+class FederatedLearningRound(Base):
+    """Federated learning aggregation rounds recording global loss and accuracy per training round."""
+    __tablename__ = "federated_learning_rounds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    simulation_run_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("simulation_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    round_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    global_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    global_accuracy: Mapped[float] = mapped_column(Float, nullable=False)
+    participating_clients: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    simulation_run: Mapped[Optional["SimulationRun"]] = relationship(
+        "SimulationRun", back_populates="fl_rounds"
+    )
+    clients: Mapped[List["FederatedLearningClient"]] = relationship(
+        "FederatedLearningClient", back_populates="round", cascade="all, delete-orphan", order_by="FederatedLearningClient.client_id"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "round_number", name="uq_fl_rounds_session_round"),
+        Index("ix_fl_rounds_round_num", "round_number"),
+    )
+
+
+class FederatedLearningClient(Base):
+    """Local client training metrics contributing to a federated learning aggregation round."""
+    __tablename__ = "federated_learning_clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    round_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("federated_learning_rounds.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    client_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    samples_trained: Mapped[int] = mapped_column(Integer, nullable=False)
+    local_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    local_accuracy: Mapped[float] = mapped_column(Float, nullable=False)
+
+    round: Mapped["FederatedLearningRound"] = relationship(
+        "FederatedLearningRound", back_populates="clients"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("round_id", "client_id", name="uq_fl_client_round"),
+        Index("ix_fl_clients_round_client", "round_id", "client_id"),
+    )
+
+
+class NetworkNodeCoordinate(Base):
+    """Authentic physical coordinates for a network node in a simulation run."""
+    __tablename__ = "network_node_coordinates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    simulation_run_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("simulation_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    node_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    x_coord: Mapped[float] = mapped_column(Float, nullable=False)
+    y_coord: Mapped[float] = mapped_column(Float, nullable=False)
+    z_coord: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    simulation_run: Mapped["SimulationRun"] = relationship(
+        "SimulationRun", back_populates="node_coordinates"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("simulation_run_id", "node_id", name="uq_node_coordinates_run_node"),
+        Index("ix_node_coords_run_node", "simulation_run_id", "node_id"),
+    )
+
+
+class NetworkEdge(Base):
+    """Authentic physical connectivity edge between two nodes in a simulation run."""
+    __tablename__ = "network_edges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    simulation_run_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("simulation_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_node: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_node: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    simulation_run: Mapped["SimulationRun"] = relationship(
+        "SimulationRun", back_populates="network_edges"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("simulation_run_id", "source_node", "target_node", name="uq_network_edges_run_src_tgt"),
+        Index("ix_network_edges_run_src", "simulation_run_id", "source_node"),
+        Index("ix_network_edges_run_tgt", "simulation_run_id", "target_node"),
+    )
+
+
 

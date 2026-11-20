@@ -21,8 +21,12 @@ from sqlalchemy.orm import Session
 
 from .models import (
     ArtifactIngestionLedger,
+    FederatedLearningClient,
+    FederatedLearningRound,
     MLPrediction,
     ModelRegistry,
+    NetworkEdge,
+    NetworkNodeCoordinate,
     NodeEnergyMetric,
     PreventionEvent,
     RoutingRecord,
@@ -176,22 +180,50 @@ def extract_run_metadata(
         fallback_file=fallback_path,
     )
 
-    # Note: completed_at is left None unless an authoritative finish timestamp exists in source
-    # attack_type is left None if inferred, or taken from source if explicitly set
-    attack_type = current_run_data.get("attackType")
+    # Resolve authentic attack_type strictly from run configuration / metadata
+    attack_type = current_run_data.get("attack_type") or current_run_data.get("attackType")
+
+    # Resolve authentic packet_rate strictly from run configuration / metadata
+    packet_rate = current_run_data.get("packet_rate") or current_run_data.get("packetRate")
+    if packet_rate is not None:
+        try:
+            packet_rate = int(packet_rate)
+        except (ValueError, TypeError):
+            packet_rate = None
+
+    # Resolve authentic simulation_time strictly from run configuration / metadata
+    simulation_time = current_run_data.get("simulation_time") or current_run_data.get("simulationTime")
+    if simulation_time is not None:
+        try:
+            simulation_time = float(simulation_time)
+        except (ValueError, TypeError):
+            simulation_time = None
+
+    # Resolve authentic completed_at strictly from authentic run completion metadata
+    completed_at = None
+    raw_ca = current_run_data.get("completed_at") or current_run_data.get("completedAt")
+    if raw_ca:
+        try:
+            if isinstance(raw_ca, str):
+                completed_at = datetime.fromisoformat(raw_ca.replace("Z", "+00:00"))
+            elif isinstance(raw_ca, datetime):
+                completed_at = raw_ca
+        except Exception as e:
+            logger.warning(f"Failed to parse authentic completed_at for {run_id}: {e}")
+            completed_at = None
 
     return {
         "run_id": run_id,
         "protocol": protocol,
         "num_nodes": int(num_nodes),
         "num_malicious": int(num_malicious),
-        "attack_type": attack_type,
-        "packet_rate": None,
-        "simulation_time": None,
+        "attack_type": str(attack_type) if attack_type is not None else None,
+        "packet_rate": packet_rate,
+        "simulation_time": simulation_time,
         "ground_truth_malicious": json.dumps(malicious_nodes) if malicious_nodes else None,
         "simulation_status": sim_status,
         "started_at": started_at,
-        "completed_at": None,
+        "completed_at": completed_at,
     }
 
 
@@ -412,7 +444,10 @@ def ingest_simulation_core(
                 "protocol": stmt.excluded.protocol,
                 "num_nodes": stmt.excluded.num_nodes,
                 "num_malicious": stmt.excluded.num_malicious,
-                "attack_type": stmt.excluded.attack_type,
+                "attack_type": func.coalesce(SimulationRun.attack_type, stmt.excluded.attack_type),
+                "packet_rate": func.coalesce(SimulationRun.packet_rate, stmt.excluded.packet_rate),
+                "simulation_time": func.coalesce(SimulationRun.simulation_time, stmt.excluded.simulation_time),
+                "completed_at": func.coalesce(SimulationRun.completed_at, stmt.excluded.completed_at),
                 "ground_truth_malicious": stmt.excluded.ground_truth_malicious,
                 "simulation_status": stmt.excluded.simulation_status,
                 "persistence_status": "pending",
@@ -528,6 +563,8 @@ def ingest_simulation_core(
             run_rec.persistence_status = "completed"
             run_rec.persisted_at = datetime.now(timezone.utc)
             run_rec.persistence_error = None
+            if run_rec.completed_at is None and run_metadata.get("completed_at"):
+                run_rec.completed_at = run_metadata["completed_at"]
 
         logger.info(
             f"Successfully persisted run {run_id}: {len(all_flows)} flows, "
@@ -764,6 +801,9 @@ def ingest_classical_ml_predictions(
         if not run:
             raise ValueError(f"SimulationRun record not found for run_id: {run_id}")
         run_db_id = run.id
+        num_nodes = run.num_nodes
+        if not num_nodes or num_nodes < 2:
+            raise ValueError(f"Invalid num_nodes ({num_nodes}) for simulation run '{run_id}'")
 
         # 2. Verify artifact hash against simulation_artifacts if record exists
         art = (
@@ -843,8 +883,8 @@ def ingest_classical_ml_predictions(
                 # Bounds and domain checks
                 if t_val < 0:
                     raise ValueError(f"Negative time {t_val} at row {row_idx}")
-                if n_val < 0 or n_val > 7:
-                    raise ValueError(f"Node ID {n_val} out of valid range [0, 7] at row {row_idx}")
+                if n_val < 0 or n_val >= num_nodes:
+                    raise ValueError(f"Node ID {n_val} out of valid range [0, {num_nodes - 1}] at row {row_idx}")
                 if rx_val < 0:
                     raise ValueError(f"Negative rx {rx_val} at row {row_idx}")
                 if cf_val < 0:
@@ -877,12 +917,18 @@ def ingest_classical_ml_predictions(
                 })
 
         # Global structural validation
-        if len(rows) != 1192:
-            raise ValueError(f"Expected exactly 1192 rows in {csv_path.name}, got {len(rows)}")
-        if len(unique_times) != 149:
-            raise ValueError(f"Expected exactly 149 unique timesteps, got {len(unique_times)}")
-        if len(unique_nodes) != 8:
-            raise ValueError(f"Expected exactly 8 unique nodes, got {len(unique_nodes)}")
+        if len(unique_times) == 0:
+            raise ValueError(f"Zero timesteps encountered in {csv_path.name}")
+        if len(unique_nodes) != num_nodes:
+            raise ValueError(f"Expected exactly {num_nodes} unique nodes, got {len(unique_nodes)} in {csv_path.name}")
+        if min(unique_nodes) != 0 or max(unique_nodes) != num_nodes - 1:
+            raise ValueError(f"Node IDs must span [0, {num_nodes - 1}], got min={min(unique_nodes)}, max={max(unique_nodes)}")
+
+        expected_rows = len(unique_times) * num_nodes
+        if len(rows) != expected_rows:
+            raise ValueError(
+                f"Expected exactly {expected_rows} rows ({len(unique_times)} timesteps x {num_nodes} nodes) in {csv_path.name}, got {len(rows)}"
+            )
 
         # 4. Prepare batch records
         all_predictions = []
@@ -927,6 +973,7 @@ def ingest_classical_ml_predictions(
         "run_id": run_id,
         "simulation_run_id": run_db_id,
         "total_records": len(all_predictions),
+        "inserted": len(all_predictions),
         "per_model_counts": {m: len(rows) for m in eligible_models},
     }
 
@@ -943,7 +990,7 @@ def ingest_trust_evaluations(
       - CSV exists at dynamic_dir / f"run_{run_id}_lstm_pred.csv".
       - CSV SHA-256 matches recorded simulation_artifacts hash (file_type='lstm_pred_csv').
       - Required columns: time, node, score, is_malicious.
-      - Exactly 1,160 rows, 145 unique timesteps, 8 unique nodes, 0 duplicate (time, node) pairs.
+      - Timestep validation dynamically scaled to simulation duration: 55 timesteps (440 base rows) for 60s simulations, 145 timesteps (1,160 base rows) for 150s simulations.
       - All values are finite and within domain bounds:
           time >= 0
           0 <= node <= 7
@@ -976,6 +1023,9 @@ def ingest_trust_evaluations(
         if not run:
             raise ValueError(f"SimulationRun record not found for run_id: {run_id}")
         run_db_id = run.id
+        num_nodes = run.num_nodes
+        if not num_nodes or num_nodes < 2:
+            raise ValueError(f"Invalid num_nodes ({num_nodes}) for simulation run '{run_id}'")
 
         # 2. Verify recorded artifact hash parity
         artifact = (
@@ -1030,8 +1080,8 @@ def ingest_trust_evaluations(
                 # Bounds and domain checks
                 if t_val < 0.0:
                     raise ValueError(f"Negative time {t_val} at row {row_idx}")
-                if n_val < 0 or n_val > 7:
-                    raise ValueError(f"Node ID {n_val} out of valid range [0, 7] at row {row_idx}")
+                if n_val < 0 or n_val >= num_nodes:
+                    raise ValueError(f"Node ID {n_val} out of valid range [0, {num_nodes - 1}] at row {row_idx}")
                 if s_val < 0.0 or s_val > 1.0:
                     raise ValueError(f"Trust score {s_val} out of range [0.0, 1.0] at row {row_idx}")
                 if m_val not in (0, 1):
@@ -1064,19 +1114,162 @@ def ingest_trust_evaluations(
                 })
 
         # Global structural validation
-        # Base LSTM predictions contain 1160 rows across 145 timesteps for 8 nodes.
+        # Base LSTM predictions contain T timesteps for N nodes (T * N rows).
         # When malicious nodes are present, pass 2 appends routing exclusion overrides (time=0.0)
-        # resulting in 1160 + num_malicious rows and 145 or 146 unique timesteps.
-        expected_base_rows = 1160
-        expected_max_rows = 1160 + (run.num_malicious or 0)
+        # resulting in (T * N) to (T * N) + num_malicious rows and T or T + 1 unique timesteps.
+        if run.simulation_time is not None and run.simulation_time > 5.0:
+            expected_timesteps = int(run.simulation_time - 5.0)
+        else:
+            # Fallback for historical runs where simulation_time is null:
+            # Inspect distinct non-zero timesteps to distinguish 60s (55 steps) vs 150s (145 steps)
+            non_zero_times = {round(t, 1) for (t, n) in seen_time_node if t > 0.0}
+            if len(non_zero_times) in (55, 145):
+                expected_timesteps = len(non_zero_times)
+            else:
+                raise ValueError(
+                    f"Unsupported or indeterminate simulation duration for run '{run_id}': "
+                    f"simulation_time is null and distinct non-zero timesteps count is {len(non_zero_times)} "
+                    f"(expected 55 for 60s or 145 for 150s)."
+                )
+
+        expected_base_rows = expected_timesteps * num_nodes
+        expected_max_rows = (expected_timesteps * num_nodes) + (run.num_malicious or 0)
         if len(rows) < expected_base_rows or len(rows) > expected_max_rows:
             raise ValueError(
                 f"Expected between {expected_base_rows} and {expected_max_rows} rows in {csv_path.name}, got {len(rows)}"
             )
-        if len(unique_times) not in (145, 146):
-            raise ValueError(f"Expected 145 or 146 unique timesteps, got {len(unique_times)}")
-        if len(unique_nodes) != 8:
-            raise ValueError(f"Expected exactly 8 unique nodes, got {len(unique_nodes)}")
+
+        # 1. Exact non-zero timestep sequence verification
+        # Authentic NS-3 / LSTM sequence starts at t = 5.1 and increments by 1.0 s for expected_timesteps:
+        # e.g., 60s -> 5.1, 6.1, ..., 59.1 (55 timesteps)
+        # e.g., 150s -> 5.1, 6.1, ..., 149.1 (145 timesteps)
+        expected_times_set = {round(5.1 + k, 1) for k in range(expected_timesteps)}
+        actual_non_zero_times = {round(t, 1) for (t, n) in seen_time_node if t > 0.0}
+
+        if actual_non_zero_times != expected_times_set:
+            missing_times = sorted(list(expected_times_set - actual_non_zero_times))
+            unexpected_times = sorted(list(actual_non_zero_times - expected_times_set))
+            raise ValueError(
+                f"Timestep sequence mismatch in {csv_path.name}: "
+                f"expected {expected_timesteps} authentic timesteps from {min(expected_times_set)} to {max(expected_times_set)}. "
+                f"Missing expected timesteps: {missing_times[:10]}{'...' if len(missing_times) > 10 else ''}. "
+                f"Unexpected substituted timesteps: {unexpected_times[:10]}{'...' if len(unexpected_times) > 10 else ''}."
+            )
+
+        # 2. Complete Cartesian product check for non-zero timesteps:
+        # Every expected non-zero timestep MUST have exactly every node ID from 0 to num_nodes - 1
+        expected_nodes_set = set(range(num_nodes))
+        nodes_per_time = {}
+        for r in rows:
+            t = round(r["time_sec"], 1)
+            if t > 0.0:
+                if t not in nodes_per_time:
+                    nodes_per_time[t] = set()
+                nodes_per_time[t].add(r["node_id"])
+
+        for t in expected_times_set:
+            node_set = nodes_per_time.get(t, set())
+            if node_set != expected_nodes_set:
+                missing_nodes = expected_nodes_set - node_set
+                raise ValueError(
+                    f"Timestep {t} in {csv_path.name} is missing expected node records: {sorted(list(missing_nodes))}"
+                )
+
+        # 3. Ground-truth metadata parsing and time-zero override validation
+        zero_override_nodes = [r["node_id"] for r in rows if r["time_sec"] == 0.0]
+
+        gt_metadata_raw = run.ground_truth_malicious
+        gt_malicious_set = None
+        gt_parse_error = None
+
+        if gt_metadata_raw is not None:
+            try:
+                parsed_gt = json.loads(gt_metadata_raw)
+                if not isinstance(parsed_gt, list):
+                    gt_parse_error = f"ground_truth_malicious must be a JSON list, got {type(parsed_gt).__name__}"
+                elif not all(isinstance(x, int) and 0 <= x < num_nodes for x in parsed_gt):
+                    gt_parse_error = f"ground_truth_malicious contains invalid node IDs for num_nodes={num_nodes}: {parsed_gt}"
+                elif len(parsed_gt) != len(set(parsed_gt)):
+                    gt_parse_error = f"ground_truth_malicious contains duplicate node IDs: {parsed_gt}"
+                else:
+                    gt_malicious_set = set(parsed_gt)
+            except Exception as e:
+                gt_parse_error = f"Failed to parse ground_truth_malicious JSON: {e}"
+
+        if zero_override_nodes:
+            # Check for duplicate override node IDs at t=0.0
+            if len(zero_override_nodes) != len(set(zero_override_nodes)):
+                raise ValueError(
+                    f"Duplicate time-zero override node IDs detected in {csv_path.name}: {zero_override_nodes}"
+                )
+
+            # Follow authentic CSV contract: maximum permitted overrides is num_malicious
+            max_permitted = run.num_malicious or 0
+            if len(zero_override_nodes) > max_permitted:
+                raise ValueError(
+                    f"Excessive time-zero override rows in {csv_path.name}: "
+                    f"found {len(zero_override_nodes)}, maximum permitted is {max_permitted}"
+                )
+
+            # Fail-closed authentication against ground_truth_malicious:
+            # Case B: NULL metadata
+            if gt_metadata_raw is None:
+                raise ValueError(
+                    f"Fail-closed validation rejected time-zero overrides for run '{run_id}': "
+                    f"ground_truth_malicious metadata is NULL in simulation_runs, cannot authenticate "
+                    f"override nodes {zero_override_nodes} in {csv_path.name}"
+                )
+
+            # Case C & E: Malformed JSON or invalid metadata structure
+            if gt_parse_error is not None:
+                raise ValueError(
+                    f"Fail-closed validation rejected time-zero overrides for run '{run_id}': "
+                    f"invalid ground_truth_malicious metadata ({gt_parse_error})"
+                )
+
+            # Case D: Valid empty list (no malicious nodes declared)
+            if gt_malicious_set is not None:
+                if len(gt_malicious_set) == 0 and len(zero_override_nodes) > 0:
+                    raise ValueError(
+                        f"Run '{run_id}' declares zero malicious nodes (ground_truth_malicious is empty []), "
+                        f"but {csv_path.name} contains time-zero override nodes: {zero_override_nodes}"
+                    )
+                # Case A: Valid metadata - check membership
+                for nid in zero_override_nodes:
+                    if nid not in gt_malicious_set:
+                        raise ValueError(
+                            f"Invalid time-zero override in {csv_path.name}: node {nid} is not in "
+                            f"ground_truth_malicious {sorted(list(gt_malicious_set))}"
+                        )
+
+            # Ensure all time-zero overrides have is_malicious == 1
+            for r in rows:
+                if r["time_sec"] == 0.0 and r["is_malicious"] != 1:
+                    raise ValueError(
+                        f"Time-zero override for node {r['node_id']} in {csv_path.name} must have is_malicious=1, "
+                        f"got {r['is_malicious']}"
+                    )
+        else:
+            # No time-zero overrides exist in CSV
+            if gt_parse_error is not None:
+                logger.warning(
+                    f"Run '{run_id}' has malformed ground_truth_malicious metadata ({gt_parse_error}), "
+                    f"but CSV contains 0 overrides. Permitting ingestion without overrides."
+                )
+
+        # 4. Total row count validation
+        expected_base_rows = expected_timesteps * num_nodes
+        expected_total_rows = expected_base_rows + len(zero_override_nodes)
+        if len(rows) != expected_total_rows:
+            raise ValueError(
+                f"Row count mismatch in {csv_path.name}: expected exactly {expected_total_rows} "
+                f"({expected_base_rows} base rows + {len(zero_override_nodes)} time-zero overrides), got {len(rows)}"
+            )
+
+        if len(unique_nodes) != num_nodes:
+            raise ValueError(f"Expected exactly {num_nodes} unique nodes, got {len(unique_nodes)}")
+        if min(unique_nodes) != 0 or max(unique_nodes) != num_nodes - 1:
+            raise ValueError(f"Node IDs must span [0, {num_nodes - 1}], got min={min(unique_nodes)}, max={max(unique_nodes)}")
 
         # 4. Query existing records for this run to enforce conflict-safety
         existing_records = (
@@ -1144,6 +1337,7 @@ def ingest_trust_evaluations(
         "simulation_run_id": run_db_id,
         "total_source_records": len(rows),
         "inserted_count": len(to_insert),
+        "inserted": len(to_insert),
         "already_existing_count": already_existing_count,
     }
 
@@ -1741,11 +1935,18 @@ def ingest_prevention_events(
                 session.rollback()
                 raise ValueError(f"Non-finite time_sec in event for run {actual_run_id}")
 
+            ev_nid = int(ev["node_id"])
+            if run.num_nodes and (ev_nid < 0 or ev_nid >= run.num_nodes):
+                session.rollback()
+                raise ValueError(
+                    f"Node ID {ev_nid} in prevention event out of valid range [0, {run.num_nodes - 1}] in run {actual_run_id}"
+                )
+
             p_ev = PreventionEvent(
                 simulation_run_id=run_db_id,
                 sequence=seq,
                 time_sec=t_sec,
-                node_id=int(ev["node_id"]),
+                node_id=ev_nid,
                 action_type=act,
                 execution_status=st,
                 trigger_source=trig,
@@ -1778,6 +1979,745 @@ def ingest_prevention_events(
             "inserted": len(events_list),
             "existing": 0,
         }
+
+
+def backfill_simulation_run_metadata(
+    dynamic_dir: Path = DYNAMIC_RESULTS_DIR,
+    session: Optional[Session] = None,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """
+    Safely audit and backfill missing metadata fields (attack_type, packet_rate,
+    simulation_time, completed_at) in simulation_runs exclusively from authentic,
+    verifiable source artifacts and runtime configs.
+
+    Strict Authenticity Principles:
+      - Does NOT use hardcoded fallbacks (e.g. packet_rate=2, simulation_time=150.0, attack_type="Black Hole").
+      - Does NOT use filesystem modification timestamp (st_mtime) as completed_at.
+      - If authentic source cannot be established, preserves NULL and classifies as UNVERIFIABLE.
+      - Never overwrites existing non-NULL database values.
+      - Idempotent and deterministic.
+    """
+    logger.info("Starting Phase 3 source-authenticity metadata audit/backfill.")
+
+    def _do_backfill(s: Session) -> Dict[str, Any]:
+        runs = s.query(SimulationRun).order_by(SimulationRun.id.asc()).all()
+        audit_table = []
+        total_runs_updated = 0
+        total_fields_updated = 0
+
+        # Check current_run.json if present
+        current_run_path = Path(dynamic_dir) / "current_run.json"
+        current_run_data = {}
+        if current_run_path.exists():
+            try:
+                with open(current_run_path, "r", encoding="utf-8") as f:
+                    current_run_data = json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to read current_run.json: {e}")
+
+        for run in runs:
+            run_updates = {}
+            run_id = run.run_id
+
+            # Locate run-specific config or authentic artifact if any
+            # 1. attack_type
+            if run.attack_type is not None:
+                audit_table.append({
+                    "run_id": run_id,
+                    "field_name": "attack_type",
+                    "existing_value": run.attack_type,
+                    "proposed_value": run.attack_type,
+                    "source": "simulation_runs.attack_type",
+                    "evidence": "Existing database value preserved",
+                    "status": "PRESERVED",
+                })
+            else:
+                # Check for authentic source
+                authentic_val = None
+                source_desc = None
+                evidence_desc = None
+
+                # Check if current_run.json belongs to this run and has explicit attackType/attack_type
+                if current_run_data.get("run_id") == run_id and (current_run_data.get("attack_type") or current_run_data.get("attackType")):
+                    authentic_val = current_run_data.get("attack_type") or current_run_data.get("attackType")
+                    source_desc = "current_run.json (attack_type)"
+                    evidence_desc = "Runtime invocation configuration"
+
+                if authentic_val is not None:
+                    run_updates["attack_type"] = authentic_val
+                    audit_table.append({
+                        "run_id": run_id,
+                        "field_name": "attack_type",
+                        "existing_value": None,
+                        "proposed_value": authentic_val,
+                        "source": source_desc,
+                        "evidence": evidence_desc,
+                        "status": "VERIFIED",
+                    })
+                else:
+                    audit_table.append({
+                        "run_id": run_id,
+                        "field_name": "attack_type",
+                        "existing_value": None,
+                        "proposed_value": None,
+                        "source": "None",
+                        "evidence": "No authentic attack configuration recorded for historical run",
+                        "status": "UNVERIFIABLE",
+                    })
+
+            # 2. packet_rate
+            if run.packet_rate is not None:
+                audit_table.append({
+                    "run_id": run_id,
+                    "field_name": "packet_rate",
+                    "existing_value": run.packet_rate,
+                    "proposed_value": run.packet_rate,
+                    "source": "simulation_runs.packet_rate",
+                    "evidence": "Existing database value preserved",
+                    "status": "PRESERVED",
+                })
+            else:
+                authentic_val = None
+                source_desc = None
+                evidence_desc = None
+
+                if current_run_data.get("run_id") == run_id and (current_run_data.get("packet_rate") is not None or current_run_data.get("packetRate") is not None):
+                    val = current_run_data.get("packet_rate") if current_run_data.get("packet_rate") is not None else current_run_data.get("packetRate")
+                    try:
+                        authentic_val = int(val)
+                        source_desc = "current_run.json (packet_rate)"
+                        evidence_desc = "Runtime invocation configuration"
+                    except (ValueError, TypeError):
+                        pass
+
+                if authentic_val is not None:
+                    run_updates["packet_rate"] = authentic_val
+                    audit_table.append({
+                        "run_id": run_id,
+                        "field_name": "packet_rate",
+                        "existing_value": None,
+                        "proposed_value": authentic_val,
+                        "source": source_desc,
+                        "evidence": evidence_desc,
+                        "status": "VERIFIED",
+                    })
+                else:
+                    audit_table.append({
+                        "run_id": run_id,
+                        "field_name": "packet_rate",
+                        "existing_value": None,
+                        "proposed_value": None,
+                        "source": "None",
+                        "evidence": "No authentic traffic configuration recorded for historical run",
+                        "status": "UNVERIFIABLE",
+                    })
+
+            # 3. simulation_time
+            if run.simulation_time is not None:
+                audit_table.append({
+                    "run_id": run_id,
+                    "field_name": "simulation_time",
+                    "existing_value": run.simulation_time,
+                    "proposed_value": run.simulation_time,
+                    "source": "simulation_runs.simulation_time",
+                    "evidence": "Existing database value preserved",
+                    "status": "PRESERVED",
+                })
+            else:
+                authentic_val = None
+                source_desc = None
+                evidence_desc = None
+
+                if current_run_data.get("run_id") == run_id and (current_run_data.get("simulation_time") is not None or current_run_data.get("simulationTime") is not None):
+                    val = current_run_data.get("simulation_time") if current_run_data.get("simulation_time") is not None else current_run_data.get("simulationTime")
+                    try:
+                        authentic_val = float(val)
+                        source_desc = "current_run.json (simulation_time)"
+                        evidence_desc = "Runtime invocation configuration"
+                    except (ValueError, TypeError):
+                        pass
+
+                if authentic_val is not None:
+                    run_updates["simulation_time"] = authentic_val
+                    audit_table.append({
+                        "run_id": run_id,
+                        "field_name": "simulation_time",
+                        "existing_value": None,
+                        "proposed_value": authentic_val,
+                        "source": source_desc,
+                        "evidence": evidence_desc,
+                        "status": "VERIFIED",
+                    })
+                else:
+                    audit_table.append({
+                        "run_id": run_id,
+                        "field_name": "simulation_time",
+                        "existing_value": None,
+                        "proposed_value": None,
+                        "source": "None",
+                        "evidence": "No authentic runtime duration configuration recorded for historical run",
+                        "status": "UNVERIFIABLE",
+                    })
+
+            # 4. completed_at
+            if run.completed_at is not None:
+                audit_table.append({
+                    "run_id": run_id,
+                    "field_name": "completed_at",
+                    "existing_value": run.completed_at.isoformat() if isinstance(run.completed_at, datetime) else str(run.completed_at),
+                    "proposed_value": run.completed_at.isoformat() if isinstance(run.completed_at, datetime) else str(run.completed_at),
+                    "source": "simulation_runs.completed_at",
+                    "evidence": "Existing database value preserved",
+                    "status": "PRESERVED",
+                })
+            else:
+                authentic_val = None
+                source_desc = None
+                evidence_desc = None
+
+                if current_run_data.get("run_id") == run_id:
+                    raw_ca = current_run_data.get("completed_at") or current_run_data.get("completedAt")
+                    if raw_ca:
+                        try:
+                            if isinstance(raw_ca, str):
+                                authentic_val = datetime.fromisoformat(raw_ca.replace("Z", "+00:00"))
+                            elif isinstance(raw_ca, datetime):
+                                authentic_val = raw_ca
+                            source_desc = "current_run.json (completed_at)"
+                            evidence_desc = "Authentic runner completion timestamp"
+                        except Exception:
+                            pass
+
+                if authentic_val is not None:
+                    run_updates["completed_at"] = authentic_val
+                    audit_table.append({
+                        "run_id": run_id,
+                        "field_name": "completed_at",
+                        "existing_value": None,
+                        "proposed_value": authentic_val.isoformat(),
+                        "source": source_desc,
+                        "evidence": evidence_desc,
+                        "status": "VERIFIED",
+                    })
+                else:
+                    audit_table.append({
+                        "run_id": run_id,
+                        "field_name": "completed_at",
+                        "existing_value": None,
+                        "proposed_value": None,
+                        "source": "None",
+                        "evidence": "Historical run lacks authentic completion timestamp; filesystem st_mtime unverified",
+                        "status": "UNVERIFIABLE",
+                    })
+
+            if run_updates and not dry_run:
+                total_runs_updated += 1
+                total_fields_updated += len(run_updates)
+                for k, v in run_updates.items():
+                    setattr(run, k, v)
+
+        if not dry_run and total_runs_updated > 0:
+            s.flush()
+
+        logger.info(
+            f"Phase 3 metadata audit completed: {len(runs)} runs checked, "
+            f"{total_runs_updated} runs updated, {total_fields_updated} fields updated."
+        )
+        return {
+            "status": "success",
+            "total_runs_checked": len(runs),
+            "total_runs_updated": total_runs_updated,
+            "total_fields_updated": total_fields_updated,
+            "audit_table": audit_table,
+        }
+
+    if session is not None:
+        return _do_backfill(session)
+    else:
+        with get_write_session() as s_managed:
+            return _do_backfill(s_managed)
+
+
+def _ingest_fl_with_session(
+    session: Session,
+    run_id: str,
+    dynamic_dir: Path = DYNAMIC_RESULTS_DIR,
+    fl_metrics_file: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Internal implementation of Federated Learning ingestion operating within an active Session.
+    """
+    # 1. Resolve simulation run dynamically using run identifier
+    run = session.query(SimulationRun).filter_by(run_id=run_id).first()
+    if not run:
+        raise ValueError(f"SimulationRun record not found for run_id: {run_id}")
+    run_db_id = run.id
+
+    # 2. Resolve target artifact path
+    target_path: Optional[Path] = None
+    candidates = [
+        fl_metrics_file,
+        dynamic_dir / run_id / "fl" / "fl_metrics.json",
+        dynamic_dir / "fl" / "fl_metrics.json",
+    ]
+    for c in candidates:
+        if c and Path(c).exists():
+            target_path = Path(c)
+            break
+
+    if not target_path or not target_path.exists():
+        logger.info(f"FL metrics artifact missing for run {run_id}. Recorded SKIPPED_NO_ARTIFACT.")
+        return {
+            "status": "SKIPPED_NO_ARTIFACT",
+            "run_id": run_id,
+            "simulation_run_id": run_db_id,
+            "inserted_rounds": 0,
+            "inserted_clients": 0,
+        }
+
+    # 3. Read single-read byte snapshot (TOCTOU protection)
+    raw_bytes = target_path.read_bytes()
+    if not raw_bytes:
+        return {
+            "status": "SKIPPED_EMPTY_FILE",
+            "run_id": run_id,
+            "simulation_run_id": run_db_id,
+            "inserted_rounds": 0,
+            "inserted_clients": 0,
+        }
+    file_hash = hashlib.sha256(raw_bytes).hexdigest()
+
+    # 4. Parse JSON
+    try:
+        data = json.loads(raw_bytes.decode("utf-8"))
+    except Exception as e:
+        raise ValueError(f"Invalid JSON syntax in FL metrics artifact for run {run_id}: {e}")
+
+    rounds_list = data.get("rounds", [])
+    if not isinstance(rounds_list, list) or len(rounds_list) == 0:
+        return {
+            "status": "NO_ROUNDS_DATA",
+            "run_id": run_id,
+            "simulation_run_id": run_db_id,
+            "inserted_rounds": 0,
+            "inserted_clients": 0,
+        }
+
+    # 5. Insert/Upsert rounds and clients idempotently
+    inserted_rounds = 0
+    inserted_clients = 0
+
+    for r in rounds_list:
+        round_num = int(r["round"])
+        global_loss = float(r["global_loss"])
+        global_accuracy = float(r["global_accuracy"])
+        clients_data = r.get("clients", [])
+        participating = len(clients_data) if clients_data else int(data.get("num_clients", 0))
+
+        # Upsert round
+        round_stmt = sqlite_insert(FederatedLearningRound).values(
+            session_id=run_id,
+            simulation_run_id=run_db_id,
+            round_number=round_num,
+            global_loss=global_loss,
+            global_accuracy=global_accuracy,
+            participating_clients=participating,
+        )
+        round_stmt = round_stmt.on_conflict_do_update(
+            index_elements=["session_id", "round_number"],
+            set_={
+                "simulation_run_id": round_stmt.excluded.simulation_run_id,
+                "global_loss": round_stmt.excluded.global_loss,
+                "global_accuracy": round_stmt.excluded.global_accuracy,
+                "participating_clients": round_stmt.excluded.participating_clients,
+            },
+        )
+        session.execute(round_stmt)
+        session.flush()
+
+        # Query round PK for client FK
+        fl_round = (
+            session.query(FederatedLearningRound)
+            .filter_by(session_id=run_id, round_number=round_num)
+            .one()
+        )
+        round_id = fl_round.id
+        inserted_rounds += 1
+
+        # Upsert clients for this round
+        for c in clients_data:
+            cid = int(c["client_id"])
+            samples = int(c.get("samples", 0))
+            local_loss = float(c.get("local_loss", 0.0))
+            local_acc = float(c.get("local_accuracy", 0.0))
+
+            client_stmt = sqlite_insert(FederatedLearningClient).values(
+                round_id=round_id,
+                client_id=cid,
+                samples_trained=samples,
+                local_loss=local_loss,
+                local_accuracy=local_acc,
+            )
+            client_stmt = client_stmt.on_conflict_do_update(
+                index_elements=["round_id", "client_id"],
+                set_={
+                    "samples_trained": client_stmt.excluded.samples_trained,
+                    "local_loss": client_stmt.excluded.local_loss,
+                    "local_accuracy": client_stmt.excluded.local_accuracy,
+                },
+            )
+            session.execute(client_stmt)
+            inserted_clients += 1
+
+    # 6. Ensure artifact registration in simulation_artifacts
+    existing_art = (
+        session.query(SimulationArtifact)
+        .filter_by(simulation_run_id=run_db_id, file_type="fl_metrics_json")
+        .first()
+    )
+    if not existing_art:
+        art_stmt = sqlite_insert(SimulationArtifact).values(
+            simulation_run_id=run_db_id,
+            file_type="fl_metrics_json",
+            file_path=target_path.resolve().as_posix(),
+            file_size_bytes=len(raw_bytes),
+            file_hash_sha256=file_hash,
+        )
+        art_stmt = art_stmt.on_conflict_do_nothing(
+            index_elements=["simulation_run_id", "file_type"]
+        )
+        session.execute(art_stmt)
+
+    logger.info(
+        f"FL ingestion completed for {run_id}: {inserted_rounds} rounds, {inserted_clients} client records."
+    )
+    return {
+        "status": "SUCCESS",
+        "run_id": run_id,
+        "simulation_run_id": run_db_id,
+        "inserted_rounds": inserted_rounds,
+        "inserted_clients": inserted_clients,
+        "artifact_hash": file_hash,
+    }
+
+
+def ingest_federated_learning_results(
+    run_id: Any,
+    dynamic_dir: Path = DYNAMIC_RESULTS_DIR,
+    fl_metrics_file: Optional[Path] = None,
+    session: Optional[Session] = None,
+    db: Optional[Session] = None,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """
+    Ingest verified Federated Learning aggregation rounds and client metrics into SQLite
+    `federated_learning_rounds` and `federated_learning_clients` tables.
+    Enforces strict conflict-safe idempotency and schema validation.
+
+    Supports:
+      - ingest_federated_learning_results(run_id, dynamic_dir=...)
+      - ingest_federated_learning_results(run_id, db=session)
+      - ingest_federated_learning_results(session, run_id=run_id)
+    """
+    active_session = session or db
+    actual_run_id = run_id
+
+    # Handle polymorphic signature if session is passed as first argument
+    if hasattr(run_id, "execute") and hasattr(run_id, "query"):
+        active_session = run_id
+        actual_run_id = kwargs.get("simulation_run_id") or kwargs.get("run_id")
+        if not actual_run_id and isinstance(dynamic_dir, str):
+            actual_run_id = dynamic_dir
+            dynamic_dir = DYNAMIC_RESULTS_DIR
+    elif "simulation_run_id" in kwargs and not actual_run_id:
+        actual_run_id = kwargs["simulation_run_id"]
+
+    if not actual_run_id or not isinstance(actual_run_id, str):
+        raise ValueError(f"Invalid or missing run_id: {actual_run_id}")
+
+    if active_session is not None:
+        return _ingest_fl_with_session(
+            session=active_session,
+            run_id=actual_run_id,
+            dynamic_dir=dynamic_dir,
+            fl_metrics_file=fl_metrics_file,
+        )
+    else:
+        with get_write_session() as managed_session:
+            return _ingest_fl_with_session(
+                session=managed_session,
+                run_id=actual_run_id,
+                dynamic_dir=dynamic_dir,
+                fl_metrics_file=fl_metrics_file,
+            )
+
+
+def _ingest_topology_with_session(
+    session: Session,
+    run_id: str,
+    dynamic_dir: Path = DYNAMIC_RESULTS_DIR,
+    topology_file: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Internal implementation of Network Topology ingestion operating within an active Session.
+    """
+    # 1. Resolve simulation run dynamically using run identifier
+    run = session.query(SimulationRun).filter_by(run_id=run_id).first()
+    if not run:
+        raise ValueError(f"SimulationRun record not found for run_id: {run_id}")
+    run_db_id = run.id
+
+    # 2. Resolve target artifact path
+    target_path = Path(topology_file) if topology_file else Path(dynamic_dir) / f"run_{run_id}_topology.json"
+    if not target_path.exists():
+        logger.info(f"Topology artifact missing for run {run_id}. Recorded SKIPPED_NO_ARTIFACT.")
+        return {
+            "status": "SKIPPED_NO_ARTIFACT",
+            "run_id": run_id,
+            "simulation_run_id": run_db_id,
+            "inserted_nodes": 0,
+            "inserted_edges": 0,
+        }
+
+    # 3. Read single-read byte snapshot (TOCTOU protection)
+    raw_bytes = target_path.read_bytes()
+    if not raw_bytes:
+        return {
+            "status": "SKIPPED_EMPTY_FILE",
+            "run_id": run_id,
+            "simulation_run_id": run_db_id,
+            "inserted_nodes": 0,
+            "inserted_edges": 0,
+        }
+    file_hash = hashlib.sha256(raw_bytes).hexdigest()
+
+    # 4. Parse JSON
+    try:
+        data = json.loads(raw_bytes.decode("utf-8"))
+    except Exception as e:
+        raise ValueError(f"Invalid JSON syntax in topology artifact for run {run_id}: {e}")
+
+    nodes_pos = data.get("nodes_pos", {})
+    edges = data.get("edges", [])
+
+    if not isinstance(nodes_pos, dict):
+        raise ValueError(f"'nodes_pos' must be a dictionary in topology artifact for run {run_id}")
+    if not isinstance(edges, list):
+        raise ValueError(f"'edges' must be a list in topology artifact for run {run_id}")
+
+    # 5. Validate coordinates and node IDs
+    validated_nodes = []
+    for node_key, coords in nodes_pos.items():
+        try:
+            node_id = int(node_key)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid non-integer node ID '{node_key}' in topology for run {run_id}")
+
+        if node_id < 0 or node_id >= run.num_nodes:
+            raise ValueError(
+                f"Node ID {node_id} out of bounds for {run.num_nodes}-node simulation run {run_id}"
+            )
+
+        if not isinstance(coords, (list, tuple)) or len(coords) < 2:
+            raise ValueError(f"Node {node_id} has invalid coordinates structure: {coords}")
+
+        try:
+            x = float(coords[0])
+            y = float(coords[1])
+            z = float(coords[2]) if len(coords) > 2 else 0.0
+        except (ValueError, TypeError):
+            raise ValueError(f"Node {node_id} has non-numeric coordinates: {coords}")
+
+        if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+            raise ValueError(f"Node {node_id} has non-finite coordinates: ({x}, {y}, {z})")
+
+        validated_nodes.append((node_id, x, y, z))
+
+    # 6. Validate edges against node coordinates
+    valid_node_ids = {n[0] for n in validated_nodes}
+    validated_edges = []
+    for edge in edges:
+        if not isinstance(edge, dict) or "source" not in edge or "target" not in edge:
+            raise ValueError(f"Malformed edge entry in topology for run {run_id}: {edge}")
+
+        try:
+            u = int(edge["source"])
+            v = int(edge["target"])
+        except (ValueError, TypeError):
+            raise ValueError(f"Non-integer edge endpoint in topology for run {run_id}: {edge}")
+
+        if u not in valid_node_ids or v not in valid_node_ids:
+            raise ValueError(
+                f"Edge ({u}, {v}) references unknown node not present in node positions for run {run_id}"
+            )
+
+        validated_edges.append((u, v))
+
+    # 7. Check existing coordinates for conflict safety
+    existing_coords = {
+        c.node_id: (c.x_coord, c.y_coord, c.z_coord)
+        for c in session.query(NetworkNodeCoordinate)
+        .filter_by(simulation_run_id=run_db_id)
+        .all()
+    }
+
+    # If coordinates already exist for this run, verify every proposed coordinate is identical
+    for node_id, x, y, z in validated_nodes:
+        if node_id in existing_coords:
+            orig_x, orig_y, orig_z = existing_coords[node_id]
+            if (
+                abs(orig_x - x) > 1e-4
+                or abs(orig_y - y) > 1e-4
+                or abs(orig_z - z) > 1e-4
+            ):
+                raise ValueError(
+                    f"Conflicting coordinates detected for run '{run_id}', node {node_id}: "
+                    f"existing=({orig_x}, {orig_y}, {orig_z}), proposed=({x}, {y}, {z}). "
+                    f"Refusing to overwrite authentic node coordinates."
+                )
+
+    # 8. Check existing edges for conflict safety
+    existing_edges = {
+        (e.source_node, e.target_node)
+        for e in session.query(NetworkEdge)
+        .filter_by(simulation_run_id=run_db_id)
+        .all()
+    }
+
+    # If already fully ingested and identical:
+    if existing_coords and len(existing_coords) == len(validated_nodes) and existing_edges and len(existing_edges) == len(validated_edges):
+        proposed_edge_set = set(validated_edges)
+        if proposed_edge_set == existing_edges:
+            logger.info(f"Topology for run {run_id} already ingested with identical data. Zero duplicates created.")
+            return {
+                "status": "ALREADY_INGESTED",
+                "run_id": run_id,
+                "simulation_run_id": run_db_id,
+                "inserted_nodes": 0,
+                "inserted_edges": 0,
+                "existing_nodes": len(existing_coords),
+                "existing_edges": len(existing_edges),
+                "artifact_hash": file_hash,
+            }
+
+    # 9. Insert nodes and edges idempotently
+    inserted_nodes = 0
+    for node_id, x, y, z in validated_nodes:
+        if node_id not in existing_coords:
+            node_stmt = sqlite_insert(NetworkNodeCoordinate).values(
+                simulation_run_id=run_db_id,
+                node_id=node_id,
+                x_coord=x,
+                y_coord=y,
+                z_coord=z,
+            )
+            node_stmt = node_stmt.on_conflict_do_nothing(
+                index_elements=["simulation_run_id", "node_id"]
+            )
+            session.execute(node_stmt)
+            inserted_nodes += 1
+
+    session.flush()
+
+    inserted_edges = 0
+    for u, v in validated_edges:
+        if (u, v) not in existing_edges:
+            edge_stmt = sqlite_insert(NetworkEdge).values(
+                simulation_run_id=run_db_id,
+                source_node=u,
+                target_node=v,
+            )
+            edge_stmt = edge_stmt.on_conflict_do_nothing(
+                index_elements=["simulation_run_id", "source_node", "target_node"]
+            )
+            session.execute(edge_stmt)
+            inserted_edges += 1
+
+    # 8. Ensure artifact registration in simulation_artifacts
+    existing_art = (
+        session.query(SimulationArtifact)
+        .filter_by(simulation_run_id=run_db_id, file_type="topology_json")
+        .first()
+    )
+    if not existing_art:
+        art_stmt = sqlite_insert(SimulationArtifact).values(
+            simulation_run_id=run_db_id,
+            file_type="topology_json",
+            file_path=target_path.resolve().as_posix(),
+            file_size_bytes=len(raw_bytes),
+            file_hash_sha256=file_hash,
+        )
+        art_stmt = art_stmt.on_conflict_do_nothing(
+            index_elements=["simulation_run_id", "file_type"]
+        )
+        session.execute(art_stmt)
+
+    logger.info(
+        f"Topology ingestion completed for {run_id}: {inserted_nodes} nodes, {inserted_edges} edges."
+    )
+    return {
+        "status": "SUCCESS",
+        "run_id": run_id,
+        "simulation_run_id": run_db_id,
+        "inserted_nodes": inserted_nodes,
+        "inserted_edges": inserted_edges,
+        "artifact_hash": file_hash,
+    }
+
+
+def ingest_network_topology(
+    run_id: Any,
+    dynamic_dir: Path = DYNAMIC_RESULTS_DIR,
+    topology_file: Optional[Path] = None,
+    session: Optional[Session] = None,
+    db: Optional[Session] = None,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """
+    Ingest verified NS-3 dynamic network topology (node coordinates and connectivity edges)
+    into SQLite `network_node_coordinates` and `network_edges` tables.
+    Enforces strict conflict-safe idempotency and schema validation.
+
+    Supports:
+      - ingest_network_topology(run_id, dynamic_dir=...)
+      - ingest_network_topology(run_id, db=session)
+      - ingest_network_topology(session, run_id=run_id)
+    """
+    active_session = session or db
+    actual_run_id = run_id
+
+    # Handle polymorphic signature if session is passed as first argument
+    if hasattr(run_id, "execute") and hasattr(run_id, "query"):
+        active_session = run_id
+        actual_run_id = kwargs.get("simulation_run_id") or kwargs.get("run_id")
+        if not actual_run_id and isinstance(dynamic_dir, str):
+            actual_run_id = dynamic_dir
+            dynamic_dir = DYNAMIC_RESULTS_DIR
+    elif "simulation_run_id" in kwargs and not actual_run_id:
+        actual_run_id = kwargs["simulation_run_id"]
+
+    if not actual_run_id or not isinstance(actual_run_id, str):
+        raise ValueError(f"Invalid or missing run_id: {actual_run_id}")
+
+    if active_session is not None:
+        return _ingest_topology_with_session(
+            session=active_session,
+            run_id=actual_run_id,
+            dynamic_dir=dynamic_dir,
+            topology_file=topology_file,
+        )
+    else:
+        with get_write_session() as managed_session:
+            return _ingest_topology_with_session(
+                session=managed_session,
+                run_id=actual_run_id,
+                dynamic_dir=dynamic_dir,
+                topology_file=topology_file,
+            )
+
+
+
 
 
 

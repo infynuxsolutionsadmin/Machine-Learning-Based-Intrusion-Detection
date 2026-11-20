@@ -156,3 +156,109 @@ def get_routing_path(
         base["status"] = "no_safe_route"
 
     return base
+
+
+def get_routing_path_from_db(run_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Retrieve authentic recovered multi-hop routing paths from the SQLite database.
+    Queries the RoutingRecord model for phase='mitigated_pass2'.
+    Maintains exact RoutingPathResponse schema and validation logic.
+    Enforces strict temporary disk fallback only when ingestion is uncommitted.
+    """
+    from app.services.simulation_runner import current_simulation
+    from database import get_read_session, SimulationRun, RoutingRecord
+
+    target_run_id = run_id or current_simulation.get("run_id")
+    n_nodes = current_simulation.get("nNodes", 8)
+    src_node = current_simulation.get("sourceNode", 0)
+    dst_node = current_simulation.get("destNode", n_nodes - 1)
+
+    if not target_run_id:
+        return {
+            "run_id": None,
+            "nNodes": n_nodes,
+            "source_node": src_node,
+            "destination_node": dst_node,
+            "source_ip": f"10.1.1.{src_node + 1}",
+            "destination_ip": f"10.1.1.{dst_node + 1}",
+            "protocol": "AODV",
+            "attackEnabled": False,
+            "maliciousNodes": [],
+            "route_available": False,
+            "destination_reached": False,
+            "hops": [],
+            "hop_count": 0,
+            "note": "No active simulation run available.",
+            "route_nodes": [],
+            "status": "no_safe_route",
+        }
+
+    with get_read_session() as session:
+        run = session.query(SimulationRun).filter_by(run_id=target_run_id).first()
+        if run:
+            malicious_nodes = json.loads(run.ground_truth_malicious) if run.ground_truth_malicious else []
+            record = (
+                session.query(RoutingRecord)
+                .filter_by(simulation_run_id=run.id, phase="mitigated_pass2")
+                .first()
+            )
+
+            actual_src = record.source_node if record else src_node
+            actual_dst = record.dest_node if record else (run.num_nodes - 1)
+
+            base = {
+                "run_id": run.run_id,
+                "nNodes": run.num_nodes,
+                "source_node": actual_src,
+                "destination_node": actual_dst,
+                "source_ip": f"10.1.1.{actual_src + 1}",
+                "destination_ip": f"10.1.1.{actual_dst + 1}",
+                "protocol": run.protocol,
+                "attackEnabled": run.num_malicious > 0,
+                "maliciousNodes": malicious_nodes,
+            }
+
+            if record and record.route_available:
+                hops = json.loads(record.hops_json) if record.hops_json else []
+                route_nodes = [h["node_id"] for h in hops] if hops else []
+                base.update({
+                    "route_available": True,
+                    "destination_reached": record.destination_reached,
+                    "hops": hops,
+                    "hop_count": record.hop_count,
+                    "note": record.notes or "",
+                    "route_nodes": route_nodes,
+                    "status": "safe_route_found" if route_nodes else "no_safe_route",
+                })
+            else:
+                base.update({
+                    "route_available": False,
+                    "destination_reached": False,
+                    "hops": [],
+                    "hop_count": 0,
+                    "note": record.notes if record else "No routing records found in database for this run.",
+                    "route_nodes": [],
+                    "status": "no_safe_route",
+                })
+
+            return base
+
+    # Temporary disk fallback if ingestion incomplete
+    if (
+        target_run_id == current_simulation.get("run_id")
+        and current_simulation.get("routing_json_path")
+        and os.path.exists(current_simulation["routing_json_path"])
+        and current_simulation.get("persistence", {}).get("routing_records", {}).get("status") not in ("SUCCESS", "ALREADY_INGESTED")
+    ):
+        return get_routing_path(
+            routing_json_path=current_simulation.get("routing_json_path"),
+            nNodes=current_simulation["nNodes"],
+            attackEnabled=current_simulation.get("attackEnabled", False),
+            maliciousNodes=current_simulation.get("maliciousNodes", []),
+            run_id=current_simulation.get("run_id"),
+            sourceNode=current_simulation.get("sourceNode", 0),
+            destNode=current_simulation.get("destNode", current_simulation["nNodes"] - 1),
+        )
+
+    raise KeyError(f"Simulation run '{target_run_id}' not found in database.")
+

@@ -249,6 +249,7 @@ int main(int argc, char *argv[])
 {
     uint32_t nNodes = 8;
     double simulationTime = 60.0;
+    uint32_t packetRate = 2;
     std::string maliciousNodes = "";
     std::string outputFile = "manet-flowmon-results.xml";
     std::string traceFile = "";
@@ -268,6 +269,7 @@ int main(int argc, char *argv[])
     cmd.AddValue("preventionEventsFile", "Output prevention events JSON", preventionEventsFile);
     cmd.AddValue("nNodes",         "Number of nodes",             nNodes);
     cmd.AddValue("simulationTime", "Simulation time (s)",         simulationTime);
+    cmd.AddValue("packetRate",     "Packet transmission rate (pkts/sec)", packetRate);
     cmd.AddValue("maliciousNodes", "Attacker node IDs (CSV)",     maliciousNodes);
     cmd.AddValue("outputFile",     "FlowMonitor XML output",      outputFile);
     cmd.AddValue("traceFile",      "Output CSV trace file",       traceFile);
@@ -284,10 +286,18 @@ int main(int argc, char *argv[])
         destNode = nNodes - 1;
     }
 
+    if (packetRate == 0) {
+        std::cerr << "Error: packetRate must be a positive integer greater than 0." << std::endl;
+        return 1;
+    }
+    double packetInterval = 1.0 / static_cast<double>(packetRate);
+
     RngSeedManager::SetSeed(rngSeed);
 
     std::cout << "Config: nNodes=" << nNodes
               << " simulationTime=" << simulationTime
+              << " packetRate=" << packetRate
+              << " packetInterval=" << packetInterval
               << " maliciousNodes=" << maliciousNodes
               << " RngSeed=" << rngSeed
               << " outputFile=" << outputFile << std::endl;
@@ -436,9 +446,10 @@ int main(int argc, char *argv[])
     serverApps.Start(Seconds(1.0));
     serverApps.Stop(Seconds(simulationTime - 1.0));
 
+    uint32_t maxPackets = static_cast<uint32_t>((simulationTime + 10.0) * packetRate);
     UdpEchoClientHelper client(interfaces.GetAddress(destNode), port);
-    client.SetAttribute("MaxPackets", UintegerValue(100));
-    client.SetAttribute("Interval",   TimeValue(Seconds(0.5)));
+    client.SetAttribute("MaxPackets", UintegerValue(maxPackets));
+    client.SetAttribute("Interval",   TimeValue(Seconds(packetInterval)));
     client.SetAttribute("PacketSize", UintegerValue(1024));
 
     ApplicationContainer clientApps = client.Install(nodes.Get(sourceNode));

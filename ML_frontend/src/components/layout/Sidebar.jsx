@@ -4,6 +4,7 @@ import {
   LayoutDashboard, PlayCircle, Network, BrainCircuit, 
   ShieldCheck, Activity, X, Sparkles
 } from 'lucide-react';
+import logoImg from '../../assets/ml-manet-logo.png';
 
 const MENU_ITEMS = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -34,17 +35,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       `}>
         {/* Brand Header */}
         <div className="h-22 flex items-center px-6 shrink-0 justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-blue-500/25">
-              <Network className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="font-extrabold text-lg tracking-tight text-slate-900 flex items-center gap-1.5">
-                ML MANET
-              </div>
-              <p className="text-[11px] font-medium text-slate-400">Intelligent Defense</p>
-            </div>
-          </div>
+          <NavLink to="/" className="flex items-center focus:outline-none" aria-label="ML MANET Home">
+            <img 
+              src={logoImg} 
+              alt="ML MANET" 
+              className="h-10 sm:h-15 w-auto max-w-[180px] object-contain drop-shadow-[0_0_1px_rgba(255,255,255,0.7)]" 
+            />
+          </NavLink>
           <button 
             className="lg:hidden text-slate-400 hover:text-slate-700 p-1.5 rounded-xl hover:bg-slate-100 transition-colors" 
             onClick={toggleSidebar}
